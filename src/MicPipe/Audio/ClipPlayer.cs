@@ -15,12 +15,32 @@ public sealed class ClipPlayer : ISampleProvider, IDisposable
     private bool _playing;
     private float _volume = 1f;
 
+    public event EventHandler? PlaybackEnded;
+
     public ClipPlayer(WaveFormat format)
     {
         _format = format;
     }
 
     public WaveFormat WaveFormat => _format;
+
+    public bool IsPlaying
+    {
+        get { lock (_gate) return _playing; }
+    }
+
+    public double? GetProgress()
+    {
+        lock (_gate)
+        {
+            if (!_playing || _samples is null || _samples.Length == 0)
+            {
+                return _playing ? 0 : null;
+            }
+
+            return Math.Clamp((double)_position / _samples.Length, 0, 1);
+        }
+    }
 
     public void SetVolume(float volume) => _volume = Math.Clamp(volume, 0f, 1f);
 
@@ -48,15 +68,23 @@ public sealed class ClipPlayer : ISampleProvider, IDisposable
 
     public void Stop()
     {
+        var wasPlaying = false;
         lock (_gate)
         {
+            wasPlaying = _playing;
             _playing = false;
             _position = 0;
+        }
+
+        if (wasPlaying)
+        {
+            PlaybackEnded?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public int Read(float[] buffer, int offset, int count)
     {
+        var ended = false;
         lock (_gate)
         {
             Array.Clear(buffer, offset, count);
@@ -69,6 +97,7 @@ public sealed class ClipPlayer : ISampleProvider, IDisposable
             if (remaining <= 0)
             {
                 _playing = false;
+                ended = true;
                 return count;
             }
 
@@ -82,10 +111,16 @@ public sealed class ClipPlayer : ISampleProvider, IDisposable
             if (_position >= _samples.Length)
             {
                 _playing = false;
+                ended = true;
             }
-
-            return count;
         }
+
+        if (ended)
+        {
+            PlaybackEnded?.Invoke(this, EventArgs.Empty);
+        }
+
+        return count;
     }
 
     private static float[] Convert(AudioFileReader reader, WaveFormat target)

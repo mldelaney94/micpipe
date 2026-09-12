@@ -20,11 +20,11 @@ public static class WindowHub
         _import.Activate();
     }
 
-    public static void OpenTrim(string sourcePath, string? suggestedName = null)
+    public static void OpenTrim(string sourcePath, string? suggestedName = null, string? editClipId = null)
     {
         _trim ??= new TrimWindow();
         _trim.Closed += (_, _) => _trim = null;
-        _trim.LoadSource(sourcePath, suggestedName);
+        _trim.LoadSource(sourcePath, suggestedName, editClipId);
         _trim.Activate();
     }
 
@@ -34,6 +34,11 @@ public static class WindowHub
         _hotkeys.Closed += (_, _) => _hotkeys = null;
         _hotkeys.Refresh(focusClipId);
         _hotkeys.Activate();
+    }
+
+    public static void RefreshHotkeysIfOpen()
+    {
+        _hotkeys?.Refresh();
     }
 
     public static void OpenDevices()

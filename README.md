@@ -20,12 +20,23 @@ FFmpeg and yt-dlp are **bundled privately** when you build/publish. End users do
    `artifacts\publish\win-x64\MicPipe.exe`
 
 3. In MicPipe → **Devices**:
-   - Microphone → your real mic
-   - Virtual cable output → **CABLE Input**
-4. In Discord / your game:
-   - Input device → **CABLE Output**
+   - Microphone → your real mic (e.g. Snowball)
+   - Virtual cable output → **CABLE Input (VB-Audio Virtual Cable)**
+4. **In the game (or Discord) voice settings**, set the microphone / input device to:
+
+   **CABLE Output (VB-Audio Virtual Cable)**
+
+   MicPipe writes the mix to **CABLE Input**. The game must *listen* on **CABLE Output**. If this is wrong, push-to-talk can still open (your PTT key is held) but the voice icon stays silent and nobody hears clips or your mic.
+
+5. Optional: Windows **Settings → System → Sound → Input** (and communication defaults) → **CABLE Output**, if the game follows the system default.
+
+6. On the main window, set **PTT** to the same key/button the game uses for talk (e.g. Mouse5). Bind clips in **Clips** (e.g. F1). Pressing the bind holds PTT for the clip length and plays into the cable.
 
 Keep the whole `win-x64` folder together when you move the app.
+
+### If PTT works but no sound
+
+The cable path is almost always wrong: the game is still on your physical mic or Voicemeeter, not **CABLE Output**. Fix step 4 above. (Having Voicemeeter installed is fine — just don’t point the game at a Voicemeeter input unless MicPipe is also outputting there.)
 
 ## Develop
 
@@ -105,3 +116,5 @@ Built in Cursor, prompt by prompt. Rough log of what was asked:
 12. **Per-clip global hotkeys** — In Clips, each row gets a Bind control: “select any key”, then that key globally plays the clip to mic-out **and** holds PTT. Bind dialog must close on success (including F1) and the button must show the bound key instead of “Bind”.
 
 13. **This prompt** — Write all of the above prompts into the README.
+
+14. **PTT holds, no in-game sound** — Clip audio was reaching CABLE; the game wasn’t using **CABLE Output** as its mic. Document that setup step clearly in the README (Input = CABLE Output; MicPipe → CABLE Input).

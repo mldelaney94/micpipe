@@ -19,7 +19,17 @@ public sealed class AppSettings
     public float ClipVolume { get; set; } = 0.85f;
     public bool HotkeyHoldToPlay { get; set; }
     public Dictionary<string, string> HotkeyBindings { get; set; } = new();
+    public List<ClipKeybind> ClipKeybinds { get; set; } = new();
     public bool FirstRunComplete { get; set; }
+
+    /// <summary>Win32 virtual-key code held while clips play (push-to-talk). Null/0 = off.</summary>
+    public int? PushToTalkVirtualKey { get; set; }
+
+    /// <summary>When true, PushToTalkVirtualKey is a mouse button: 4 = Mouse4 (X1), 5 = Mouse5 (X2), 3 = Middle.</summary>
+    public bool PushToTalkIsMouse { get; set; }
+
+    /// <summary>Display name for the PTT binding (e.g. "V" or "Mouse4").</summary>
+    public string? PushToTalkKeyName { get; set; }
 
     public bool NeedsDeviceSetup =>
         string.IsNullOrWhiteSpace(MicDeviceId) || string.IsNullOrWhiteSpace(CableOutputDeviceId);
@@ -53,6 +63,15 @@ public sealed class AppSettings
         Directory.CreateDirectory(RootDir);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonOptions));
     }
+}
+
+public sealed class ClipKeybind
+{
+    public string ClipId { get; set; } = "";
+    /// <summary>Virtual-key code, or mouse button 3/4/5 when IsMouse.</summary>
+    public int Code { get; set; }
+    public bool IsMouse { get; set; }
+    public string Label { get; set; } = "";
 }
 
 public sealed class ClipEntry
@@ -155,6 +174,42 @@ public sealed class ClipLibrary
 
         entry.Name = name;
         Save();
+    }
+
+    public ClipEntry? Replace(string id, string name, string sourcePath, double durationSeconds)
+    {
+        var entry = _clips.FirstOrDefault(c => c.Id == id);
+        if (entry is null)
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(LibraryDir);
+        var ext = Path.GetExtension(sourcePath);
+        if (string.IsNullOrWhiteSpace(ext))
+        {
+            ext = ".wav";
+        }
+
+        var fileName = id + ext.ToLowerInvariant();
+        var dest = Path.Combine(LibraryDir, fileName);
+        File.Copy(sourcePath, dest, overwrite: true);
+
+        // Remove old file if extension changed
+        if (!string.Equals(entry.FileName, fileName, StringComparison.OrdinalIgnoreCase))
+        {
+            var old = Path.Combine(LibraryDir, entry.FileName);
+            if (File.Exists(old))
+            {
+                try { File.Delete(old); } catch { /* ignore */ }
+            }
+        }
+
+        entry.Name = name;
+        entry.FileName = fileName;
+        entry.DurationSeconds = durationSeconds;
+        Save();
+        return entry;
     }
 
     public void Delete(string id)

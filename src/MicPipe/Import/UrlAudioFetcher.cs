@@ -27,21 +27,22 @@ public sealed class UrlAudioFetcher
         var workDir = Path.Combine(Path.GetTempPath(), "MicPipe", "fetch-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workDir);
         var outTemplate = Path.Combine(workDir, "audio.%(ext)s");
+        var ffmpegDir = Path.GetDirectoryName(_tools.GetFfmpegPath())!;
 
         var args = new List<string>
         {
             "--no-playlist",
             "-f", "bestaudio/best",
             "-o", Quote(outTemplate),
-            "--no-progress",
-            "--quiet"
+            "--ffmpeg-location", Quote(ffmpegDir),
+            "--no-progress"
         };
 
         if (start is not null || end is not null)
         {
-            var section = FormatSection(start, end);
             args.Add("--download-sections");
-            args.Add(Quote("*" + section));
+            args.Add(Quote("*" + FormatSection(start, end)));
+            args.Add("--force-keyframes-at-cuts");
         }
 
         args.Add(Quote(url));
@@ -56,7 +57,10 @@ public sealed class UrlAudioFetcher
             throw new InvalidOperationException("Couldn't fetch that URL.", ex);
         }
 
-        var file = Directory.GetFiles(workDir).OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+        var file = Directory.GetFiles(workDir)
+            .Where(f => !f.EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
         if (file is null)
         {
             throw new InvalidOperationException("Couldn't fetch that URL.");
@@ -68,16 +72,16 @@ public sealed class UrlAudioFetcher
     private static string FormatSection(TimeSpan? start, TimeSpan? end)
     {
         var a = start ?? TimeSpan.Zero;
+        // yt-dlp accepts seconds in section ranges, e.g. *0-6
+        var startSec = a.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         if (end is null)
         {
-            return Format(a) + "-";
+            return startSec + "-inf";
         }
 
-        return Format(a) + "-" + Format(end.Value);
+        var endSec = end.Value.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+        return startSec + "-" + endSec;
     }
-
-    private static string Format(TimeSpan t) =>
-        ((int)t.TotalHours).ToString("00", CultureInfo.InvariantCulture) + t.ToString(@"\:mm\:ss", CultureInfo.InvariantCulture);
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
 
@@ -94,8 +98,12 @@ public sealed class UrlAudioFetcher
         };
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Couldn't fetch that URL.");
-        var stderr = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+        var stderrTask = proc.StandardError.ReadToEndAsync(ct);
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+        _ = await stdoutTask.ConfigureAwait(false);
+
         if (proc.ExitCode != 0)
         {
             AppLog.Write("URL tool failed: " + stderr);

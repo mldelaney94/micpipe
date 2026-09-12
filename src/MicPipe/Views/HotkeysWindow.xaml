@@ -7,22 +7,35 @@
   <Grid Background="{StaticResource SurfaceBrush}" Padding="16" RowSpacing="10">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <TextBlock Text="Hotkeys" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-    <ScrollViewer Grid.Row="1">
-      <StackPanel x:Name="BindingsPanel" Spacing="6" />
+
+    <StackPanel Grid.Row="1" Spacing="4">
+      <TextBlock Text="Active binds" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+      <Border Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Padding="10,8">
+        <TextBlock x:Name="ActiveBindsText" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"
+                   Text="None yet — bind keys in Clips, or assign F-keys below." />
+      </Border>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="2">
+      <StackPanel Spacing="8">
+        <TextBlock Text="F1–F12" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+        <StackPanel x:Name="BindingsPanel" Spacing="6" />
+      </StackPanel>
     </ScrollViewer>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16">
       <RadioButton x:Name="HoldRadio" Content="Hold to play" GroupName="Mode" />
       <RadioButton x:Name="ToggleRadio" Content="Press to play" GroupName="Mode" IsChecked="True" />
     </StackPanel>
 
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+    <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8">
       <Button Content="Clear all" Style="{StaticResource ToolButtonStyle}" Click="Clear_Click" />
       <Button Content="Save" Style="{StaticResource ToolButtonStyle}" Click="Save_Click" />
     </StackPanel>

@@ -2,6 +2,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using MicPipe.Data;
+using MicPipe.Services;
 
 namespace MicPipe.Audio;
 
@@ -15,15 +16,20 @@ public sealed class AudioDeviceInfo
 public sealed class AudioEngine : IDisposable
 {
     private readonly AppSettings _settings;
+    private readonly PushToTalkService _ptt;
     private readonly object _gate = new();
     private WasapiCapture? _capture;
     private WasapiOut? _output;
     private WasapiOut? _monitor;
+    private WasapiOut? _previewOut;
+    private AudioFileReader? _previewReader;
     private BufferedWaveProvider? _micBuffer;
     private VolumeSampleProvider? _micVolume;
     private ClipPlayer? _clipPlayer;
     private WaveFormat? _mixFormat;
     private bool _running;
+    private int _pttHoldGeneration;
+    private CancellationTokenSource? _pttHoldCts;
 
     public event EventHandler? StateChanged;
     public event EventHandler<string?>? ClipChanged;
@@ -31,9 +37,34 @@ public sealed class AudioEngine : IDisposable
     public bool IsLive => _running;
     public string? LastClipName { get; private set; }
 
-    public AudioEngine(AppSettings settings)
+    /// <summary>0–1 playback progress for the active clip/preview, or null if idle.</summary>
+    public double? GetClipProgress()
+    {
+        // Prefer cable clip progress when live (local hearback may also be open).
+        var cableProgress = _clipPlayer?.GetProgress();
+        if (cableProgress is not null)
+        {
+            return cableProgress;
+        }
+
+        if (_previewOut is not null && _previewReader is not null)
+        {
+            var total = _previewReader.TotalTime.TotalSeconds;
+            if (total <= 0) return 0;
+            return Math.Clamp(_previewReader.CurrentTime.TotalSeconds / total, 0, 1);
+        }
+
+        return null;
+    }
+
+    public bool IsClipPlaying =>
+        (_previewOut is not null && _previewOut.PlaybackState == PlaybackState.Playing) ||
+        (_clipPlayer?.IsPlaying ?? false);
+
+    public AudioEngine(AppSettings settings, PushToTalkService ptt)
     {
         _settings = settings;
+        _ptt = ptt;
     }
 
     public static IReadOnlyList<AudioDeviceInfo> ListCaptureDevices()
@@ -150,6 +181,7 @@ public sealed class AudioEngine : IDisposable
 
             _clipPlayer = new ClipPlayer(_mixFormat);
             _clipPlayer.SetVolume(_settings.ClipVolume);
+            _clipPlayer.PlaybackEnded += ClipPlayer_PlaybackEnded;
 
             var mixer = new MixingSampleProvider(_mixFormat) { ReadFully = true };
             mixer.AddMixerInput(_micVolume);
@@ -198,6 +230,7 @@ public sealed class AudioEngine : IDisposable
 
     public void Stop()
     {
+        EndPttHold();
         lock (_gate)
         {
             _running = false;
@@ -208,6 +241,8 @@ public sealed class AudioEngine : IDisposable
             try { _monitor?.Stop(); } catch { /* ignore */ }
             try { _monitor?.Dispose(); } catch { /* ignore */ }
             try { _clipPlayer?.Dispose(); } catch { /* ignore */ }
+            try { StopPreviewInternal(); } catch { /* ignore */ }
+            _ptt.Release();
             _capture = null;
             _output = null;
             _monitor = null;
@@ -218,6 +253,15 @@ public sealed class AudioEngine : IDisposable
         }
 
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ClipPlayer_PlaybackEnded(object? sender, EventArgs e)
+    {
+        // Do not release PTT here — BeginPttHold's duration timer (+ buffer slack) is
+        // authoritative so games still hear the tail of the clip while PTT is down.
+        try { StopPreviewInternal(); } catch { /* ignore */ }
+        LastClipName = null;
+        ClipChanged?.Invoke(this, null);
     }
 
     public void SetMicVolume(float volume)
@@ -240,6 +284,8 @@ public sealed class AudioEngine : IDisposable
 
     public void PlayClip(string path, string displayName)
     {
+        StopPreviewInternal();
+
         if (!_running || _clipPlayer is null)
         {
             StartIfConfigured();
@@ -250,19 +296,203 @@ public sealed class AudioEngine : IDisposable
             return;
         }
 
+        TimeSpan duration;
+        try
+        {
+            using var probe = new AudioFileReader(path);
+            duration = probe.TotalTime;
+        }
+        catch
+        {
+            duration = TimeSpan.FromSeconds(2);
+        }
+
+        BeginPttHold(duration);
         _clipPlayer.PlayFile(path);
+        StartLocalHearback(path);
         LastClipName = displayName;
         ClipChanged?.Invoke(this, displayName);
     }
 
+    /// <summary>
+    /// Play the clip on local speakers/headphones so you can hear what the cable is sending.
+    /// Skipped when a full mix monitor is already running (you'd hear it twice).
+    /// </summary>
+    private void StartLocalHearback(string path)
+    {
+        if (_monitor is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            StopPreviewInternal();
+            _previewReader = new AudioFileReader(path) { Volume = _settings.ClipVolume };
+
+            using var enumerator = new MMDeviceEnumerator();
+            MMDevice device;
+            if (!string.IsNullOrWhiteSpace(_settings.MonitorDeviceId) &&
+                !string.Equals(_settings.MonitorDeviceId, _settings.CableOutputDeviceId, StringComparison.Ordinal))
+            {
+                device = enumerator.GetDevice(_settings.MonitorDeviceId);
+            }
+            else
+            {
+                device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            }
+
+            if (string.Equals(device.ID, _settings.CableOutputDeviceId, StringComparison.Ordinal))
+            {
+                AppLog.Write("Local hearback skipped: would play into the virtual cable.");
+                _previewReader.Dispose();
+                _previewReader = null;
+                return;
+            }
+
+            _previewOut = new WasapiOut(device, AudioClientShareMode.Shared, true, 50);
+            _previewOut.PlaybackStopped += (_, _) =>
+            {
+                // Do not touch PTT — cable playback owns hold duration.
+                try { StopPreviewInternal(); } catch { /* ignore */ }
+            };
+            _previewOut.Init(_previewReader);
+            _previewOut.Play();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("Local hearback failed", ex);
+            StopPreviewInternal();
+        }
+    }
+
+    /// <summary>
+    /// Preview on local speakers/headphones (and monitor if set), so the scrubber is audible.
+    /// Still holds PTT if configured.
+    /// </summary>
+    public void PreviewClipLocal(string path, string displayName)
+    {
+        try
+        {
+            StopPreviewInternal();
+            // Don't call ClipPlayer.Stop() here — that would fire PlaybackEnded and drop PTT early.
+            // Mute/stop cable clip by swapping in silence via Stop without double-release:
+            if (_clipPlayer is not null)
+            {
+                _clipPlayer.PlaybackEnded -= ClipPlayer_PlaybackEnded;
+                _clipPlayer.Stop();
+                _clipPlayer.PlaybackEnded += ClipPlayer_PlaybackEnded;
+            }
+
+            _previewReader = new AudioFileReader(path) { Volume = _settings.ClipVolume };
+            var duration = _previewReader.TotalTime;
+
+            using var enumerator = new MMDeviceEnumerator();
+            MMDevice device;
+            if (!string.IsNullOrWhiteSpace(_settings.MonitorDeviceId))
+            {
+                device = enumerator.GetDevice(_settings.MonitorDeviceId);
+            }
+            else
+            {
+                device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            }
+
+            _previewOut = new WasapiOut(device, AudioClientShareMode.Shared, true, 50);
+            var genAtStart = _pttHoldGeneration;
+            _previewOut.PlaybackStopped += (_, _) =>
+            {
+                if (genAtStart == _pttHoldGeneration)
+                {
+                    EndPttHold();
+                }
+
+                LastClipName = null;
+                ClipChanged?.Invoke(this, null);
+                StopPreviewInternal();
+            };
+            _previewOut.Init(_previewReader);
+            BeginPttHold(duration);
+            _previewOut.Play();
+            LastClipName = displayName;
+            ClipChanged?.Invoke(this, displayName);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("PreviewClipLocal failed", ex);
+            EndPttHold();
+            StopPreviewInternal();
+            throw;
+        }
+    }
+
     public void StopClip()
     {
-        _clipPlayer?.Stop();
+        StopPreviewInternal();
+        if (_clipPlayer is not null)
+        {
+            _clipPlayer.PlaybackEnded -= ClipPlayer_PlaybackEnded;
+            _clipPlayer.Stop();
+            _clipPlayer.PlaybackEnded += ClipPlayer_PlaybackEnded;
+        }
+
+        EndPttHold();
         LastClipName = null;
         ClipChanged?.Invoke(this, null);
     }
 
-    public void Dispose() => Stop();
+    private void BeginPttHold(TimeSpan clipDuration)
+    {
+        var gen = Interlocked.Increment(ref _pttHoldGeneration);
+        _pttHoldCts?.Cancel();
+        _pttHoldCts?.Dispose();
+        _pttHoldCts = new CancellationTokenSource();
+        var token = _pttHoldCts.Token;
+
+        _ptt.Press();
+
+        var holdFor = clipDuration + TimeSpan.FromMilliseconds(200);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(holdFor, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (gen == _pttHoldGeneration)
+            {
+                _ptt.Release();
+            }
+        }, token);
+    }
+
+    private void EndPttHold()
+    {
+        Interlocked.Increment(ref _pttHoldGeneration);
+        _pttHoldCts?.Cancel();
+        _ptt.Release();
+    }
+
+    private void StopPreviewInternal()
+    {
+        try { _previewOut?.Stop(); } catch { /* ignore */ }
+        try { _previewOut?.Dispose(); } catch { /* ignore */ }
+        try { _previewReader?.Dispose(); } catch { /* ignore */ }
+        _previewOut = null;
+        _previewReader = null;
+        // PTT release is owned by EndPttHold / BeginPttHold — don't release here
+        // when switching preview → cable play (BeginPttHold re-asserts).
+    }
+
+    public void Dispose()
+    {
+        EndPttHold();
+        Stop();
+    }
 }
 
 /// <summary>

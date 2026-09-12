@@ -25,7 +25,8 @@ public static class AppServices
         Tools = new ToolResolver();
         Transcoder = new MediaTranscoder(Tools);
         UrlFetcher = new UrlAudioFetcher(Tools);
-        Engine = new AudioEngine(Settings);
+        var ptt = new PushToTalkService(Settings);
+        Engine = new AudioEngine(Settings, ptt);
         Hotkeys = new HotkeyService(Settings, Library, Engine);
         Tray = new TrayIconService();
     }

@@ -4,38 +4,75 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Clips">
 
-  <Grid Background="{StaticResource SurfaceBrush}" Padding="16" RowSpacing="10">
+  <Grid Background="{StaticResource SurfaceBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="Clips" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+    <ScrollViewer Grid.Row="0" Padding="16,16,16,8"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Clips" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+        <TextBlock Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                   Text="Right-click to rename/edit. Use Bind on a row to set a global hotkey (works while other apps are focused). Playback holds your PTT key." />
 
-    <ListView x:Name="ClipList" Grid.Row="1" SelectionMode="Single">
-      <ListView.ItemTemplate>
-        <DataTemplate>
-          <Grid ColumnSpacing="12" Padding="4">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="40" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextBrush}" />
-            <TextBlock Grid.Column="1" Text="{Binding DurationText}" Foreground="{StaticResource MutedTextBrush}" />
-            <TextBlock Grid.Column="2" Text="{Binding HotkeyText}" Foreground="{StaticResource AccentBrush}" />
-          </Grid>
-        </DataTemplate>
-      </ListView.ItemTemplate>
-    </ListView>
+        <ListView x:Name="ClipList"
+                  SelectionMode="Single"
+                  MinHeight="280"
+                  RightTapped="ClipList_RightTapped"
+                  IsRightTapEnabled="True">
+          <ListView.ItemTemplate>
+            <DataTemplate>
+              <Grid Padding="4,8" MinWidth="420" ColumnSpacing="10" RowSpacing="6">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-      <Button Content="Play" Style="{StaticResource ToolButtonStyle}" Click="Play_Click" />
-      <Button Content="Stop" Style="{StaticResource ToolButtonStyle}" Click="Stop_Click" />
-      <Button Content="Rename" Style="{StaticResource ToolButtonStyle}" Click="Rename_Click" />
-      <Button Content="Delete" Style="{StaticResource ToolButtonStyle}" Click="Delete_Click" />
-      <Button Content="Assign hotkey…" Style="{StaticResource ToolButtonStyle}" Click="Hotkey_Click" />
-    </StackPanel>
+                <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextBrush}"
+                           VerticalAlignment="Center" FontSize="15" />
+                <TextBlock Grid.Column="1" Text="{Binding DurationText}"
+                           Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                <Button Grid.Column="2"
+                        Content="{Binding BindButtonText}"
+                        Tag="{Binding}"
+                        Style="{StaticResource ToolButtonStyle}"
+                        Click="BindRow_Click"
+                        MinWidth="88" />
+
+                <ProgressBar Grid.Row="1" Grid.ColumnSpan="3"
+                             Minimum="0" Maximum="1"
+                             Value="{Binding Progress}"
+                             Height="6"
+                             Foreground="{StaticResource AccentBrush}"
+                             Background="{StaticResource SurfaceAltBrush}"
+                             Visibility="{Binding ProgressVisibility}" />
+              </Grid>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="1"
+            Background="{StaticResource SurfaceAltBrush}"
+            Padding="16,12"
+            BorderBrush="#33FFFFFF"
+            BorderThickness="0,1,0,0">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Play" Style="{StaticResource ToolButtonStyle}" Click="Play_Click" />
+        <Button Content="Stop" Style="{StaticResource ToolButtonStyle}" Click="Stop_Click" />
+        <Button Content="Rename" Style="{StaticResource ToolButtonStyle}" Click="Rename_Click" />
+        <Button Content="Edit" Style="{StaticResource ToolButtonStyle}" Click="Edit_Click" />
+        <Button Content="Delete" Style="{StaticResource ToolButtonStyle}" Click="Delete_Click" />
+      </StackPanel>
+    </Border>
   </Grid>
 </Window>

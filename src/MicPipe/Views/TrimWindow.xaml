@@ -4,50 +4,58 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Trim clip">
 
-  <Grid Background="{StaticResource SurfaceBrush}" Padding="16" RowSpacing="10">
+  <Grid Background="{StaticResource SurfaceBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="120" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="Trim clip" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-    <TextBlock x:Name="SourceLabel" Grid.Row="1" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+    <ScrollViewer Grid.Row="0"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Padding="16,16,16,8">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Trim clip" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+        <TextBlock x:Name="SourceLabel" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
 
-    <Canvas x:Name="WaveCanvas" Grid.Row="2" Background="{StaticResource SurfaceAltBrush}"
-            PointerPressed="Wave_PointerPressed" PointerMoved="Wave_PointerMoved" PointerReleased="Wave_PointerReleased" />
+        <Border Background="{StaticResource SurfaceAltBrush}" Height="220" CornerRadius="4">
+          <Canvas x:Name="WaveCanvas"
+                  PointerPressed="Wave_PointerPressed"
+                  PointerMoved="Wave_PointerMoved"
+                  PointerReleased="Wave_PointerReleased" />
+        </Border>
 
-    <Grid Grid.Row="3" ColumnSpacing="8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-      <TextBlock x:Name="StartLabel" Text="0:00.00" Foreground="{StaticResource TextBrush}" />
-      <TextBlock x:Name="SelectionLabel" Grid.Column="1" Text="selection 0:00.00"
-                 Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
-      <TextBlock x:Name="EndLabel" Grid.Column="2" Text="0:00.00" Foreground="{StaticResource TextBrush}"
-                 HorizontalAlignment="Right" />
-    </Grid>
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="StartLabel" Text="0:00.00" Foreground="{StaticResource TextBrush}" />
+          <TextBlock x:Name="SelectionLabel" Grid.Column="1" Text="selection 0:00.00"
+                     Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
+          <TextBlock x:Name="EndLabel" Grid.Column="2" Text="0:00.00" Foreground="{StaticResource TextBrush}"
+                     HorizontalAlignment="Right" />
+        </Grid>
 
-    <Slider x:Name="StartSlider" Grid.Row="4" Minimum="0" Maximum="1000" Value="0" ValueChanged="Range_Changed" Header="In" />
-    <Slider x:Name="EndSlider" Grid.Row="5" Minimum="0" Maximum="1000" Value="1000" ValueChanged="Range_Changed" Header="Out" />
+        <Slider x:Name="StartSlider" Minimum="0" Maximum="1000" Value="0" ValueChanged="Range_Changed" Header="In" />
+        <Slider x:Name="EndSlider" Minimum="0" Maximum="1000" Value="1000" ValueChanged="Range_Changed" Header="Out" />
+        <TextBox x:Name="NameBox" Header="Name" />
+        <TextBlock Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                   Text="Play selection previews on your speakers (or Devices → Monitor). Clips sent to the mic still use the virtual cable." />
+      </StackPanel>
+    </ScrollViewer>
 
-    <Grid Grid.Row="6" ColumnSpacing="8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <TextBox x:Name="NameBox" Header="Name" />
-      <Button Grid.Column="1" Content="Play selection" Style="{StaticResource ToolButtonStyle}" Click="Preview_Click" VerticalAlignment="Bottom" />
-      <Button Grid.Column="2" Content="Cancel" Style="{StaticResource ToolButtonStyle}" Click="Cancel_Click" VerticalAlignment="Bottom" />
-      <Button Grid.Column="3" Content="Save to library" Style="{StaticResource ToolButtonStyle}" Click="Save_Click" VerticalAlignment="Bottom" />
-    </Grid>
+    <Border Grid.Row="1"
+            Background="{StaticResource SurfaceAltBrush}"
+            Padding="16,12"
+            BorderBrush="#33FFFFFF"
+            BorderThickness="0,1,0,0">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Play selection" Style="{StaticResource ToolButtonStyle}" Click="Preview_Click" />
+        <Button Content="Cancel" Style="{StaticResource ToolButtonStyle}" Click="Cancel_Click" />
+        <Button x:Name="SaveButton" Content="Save to library" Style="{StaticResource ToolButtonStyle}" Click="Save_Click" />
+      </StackPanel>
+    </Border>
   </Grid>
 </Window>

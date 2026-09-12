@@ -4,40 +4,49 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Import clip">
 
-  <Grid Background="{StaticResource SurfaceBrush}" Padding="16" RowSpacing="12">
+  <Grid Background="{StaticResource SurfaceBrush}">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="Import clip" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+    <ScrollViewer Grid.Row="0"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Padding="16,16,16,8">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Import clip" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
 
-    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-      <Button x:Name="FromFileButton" Content="From file" Style="{StaticResource ToolButtonStyle}" Click="FromFile_Click" />
-      <Button x:Name="FromUrlButton" Content="From URL" Style="{StaticResource ToolButtonStyle}" Click="FromUrl_Click" />
-    </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="FromFileButton" Content="From file" Style="{StaticResource ToolButtonStyle}" Click="FromFile_Click" />
+          <Button x:Name="FromUrlButton" Content="From URL" Style="{StaticResource ToolButtonStyle}" Click="FromUrl_Click" />
+        </StackPanel>
 
-    <Grid x:Name="UrlPanel" Grid.Row="2" Visibility="Collapsed" RowSpacing="10">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <TextBox x:Name="UrlBox" Header="URL" PlaceholderText="https://..." />
-      <Grid Grid.Row="1" ColumnSpacing="8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <TextBox x:Name="FromBox" Header="From (hh:mm:ss)" PlaceholderText="0:00:00" />
-        <TextBox x:Name="ToBox" Grid.Column="1" Header="To (hh:mm:ss)" PlaceholderText="0:00:10" />
-      </Grid>
-      <TextBox x:Name="NameBox" Grid.Row="2" Header="Name" PlaceholderText="clip name" />
-      <TextBlock x:Name="StatusText" Grid.Row="3" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
-      <Button Grid.Row="4" Content="Fetch &amp; open trimmer" Style="{StaticResource ToolButtonStyle}" Click="Fetch_Click" />
-    </Grid>
+        <StackPanel x:Name="UrlPanel" Visibility="Collapsed" Spacing="12">
+          <TextBox x:Name="UrlBox" Header="URL" PlaceholderText="https://..." MinWidth="400" />
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="FromBox" Header="From (seconds, or mm:ss)" PlaceholderText="0" />
+            <TextBox x:Name="ToBox" Grid.Column="1" Header="To (seconds, or mm:ss)" PlaceholderText="6" />
+          </Grid>
+          <TextBox x:Name="NameBox" Header="Name" PlaceholderText="clip name" />
+          <TextBlock x:Name="StatusText" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="1"
+            Background="{StaticResource SurfaceAltBrush}"
+            Padding="16,12"
+            BorderBrush="#33FFFFFF"
+            BorderThickness="0,1,0,0">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="FetchButton" Content="Fetch &amp; open trimmer" Style="{StaticResource ToolButtonStyle}"
+                Click="Fetch_Click" Visibility="Collapsed" />
+      </StackPanel>
+    </Border>
   </Grid>
 </Window>
