@@ -19,6 +19,11 @@ public sealed class TrayIconService : IDisposable
         _onQuit = onQuit;
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "MicPipe.ico");
+        var hIcon = File.Exists(iconPath)
+            ? LoadImage(IntPtr.Zero, iconPath, ImageIcon, 16, 16, LrLoadFromFile)
+            : LoadIcon(IntPtr.Zero, IdiApplication);
+
         _data = new NotifyIconData
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
@@ -26,7 +31,7 @@ public sealed class TrayIconService : IDisposable
             uID = 1,
             uFlags = NifMessage | NifIcon | NifTip,
             uCallbackMessage = WmAppTray,
-            hIcon = LoadIcon(IntPtr.Zero, IdiApplication),
+            hIcon = hIcon,
             szTip = "MicPipe"
         };
 
@@ -132,6 +137,12 @@ public sealed class TrayIconService : IDisposable
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern bool Shell_NotifyIcon(uint dwMessage, ref NotifyIconData lpData);
+
+    private const uint ImageIcon = 1;
+    private const uint LrLoadFromFile = 0x00000010;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImage(IntPtr hInst, string name, uint type, int cx, int cy, uint fuLoad);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);

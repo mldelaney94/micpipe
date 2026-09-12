@@ -74,3 +74,13 @@ MicPipe uses separate windows on purpose — not one dashboard:
 ## License
 
 Add a license if/when you publish the repo formally.
+
+## How this was made
+
+Built in Cursor, prompt by prompt:
+
+1. **Initial prompt** — Plan and implement a Windows-native app that pipes clip audio to microphone-out (for proximity chat / games), with mic pass-through, volume control, separate tool windows (not one dashboard), URL + file clip import with scrubbing, and F-row hotkeys. Stack settled on .NET 10 + WinUI 3, VB-Audio Virtual Cable as the external dependency, FFmpeg/yt-dlp private and opaque. Repo pushed to GitHub; README added.
+
+2. **It didn’t load** — Published `MicPipe.exe` crashed on launch (`Cannot locate resource from 'ms-appx:///Views/MainWindow.xaml'`). One follow-up prompt: diagnose, fix publish so `MicPipe.pri` ships next to the exe, relaunch. It stayed up.
+
+3. **Give it a logo** — Generate a charcoal/amber MicPipe mark, put it on the main toolbar (and window/tray icons), republish, relaunch.

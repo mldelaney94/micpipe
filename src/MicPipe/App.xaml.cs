@@ -15,7 +15,13 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
-            AppLog.Write("Unhandled", e.Exception);
+            var detail = e.Exception.ToString();
+            if (e.Exception.InnerException is not null)
+            {
+                detail += Environment.NewLine + "Inner: " + e.Exception.InnerException;
+            }
+
+            AppLog.Write("Unhandled: " + e.Message + Environment.NewLine + detail);
             e.Handled = true;
         };
     }

@@ -22,11 +22,10 @@
       <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}" />
       <SolidColorBrush x:Key="LiveBrush" Color="{StaticResource LiveColor}" />
 
-      <Style TargetType="Button" x:Key="ToolButtonStyle">
+      <Style x:Key="ToolButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
         <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
         <Setter Property="Padding" Value="12,6" />
-        <Setter Property="CornerRadius" Value="4" />
       </Style>
     </ResourceDictionary>
   </Application.Resources>

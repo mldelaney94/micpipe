@@ -23,5 +23,16 @@ New-Item -ItemType Directory -Force -Path (Join-Path $ToolsOut "yt-dlp") | Out-N
 Copy-Item (Join-Path $Root "tools\ffmpeg\*") (Join-Path $ToolsOut "ffmpeg") -Force
 Copy-Item (Join-Path $Root "tools\yt-dlp\*") (Join-Path $ToolsOut "yt-dlp") -Force
 
+# WinUI XAML is loaded from MicPipe.pri (ms-appx). Ensure it is next to the exe.
+$pri = Get-ChildItem -Path (Join-Path $Root "src\MicPipe\bin") -Filter "MicPipe.pri" -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+if ($null -ne $pri) {
+    Copy-Item $pri.FullName -Destination (Join-Path $Out "MicPipe.pri") -Force
+    Write-Host "Copied MicPipe.pri into publish output"
+} else {
+    Write-Warning "MicPipe.pri not found - published app may fail to load XAML."
+}
+
 Write-Host "Published to $Out"
 Write-Host "Users only need VB-Audio Virtual Cable installed separately."

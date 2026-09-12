@@ -16,6 +16,7 @@
     <EnableMsixTooling>false</EnableMsixTooling>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <ApplicationIcon>Assets\MicPipe.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,5 +44,14 @@
   <Target Name="FetchPrivateTools" BeforeTargets="PrepareForBuild" Condition="!Exists('..\..\tools\ffmpeg\ffmpeg.exe') Or !Exists('..\..\tools\yt-dlp\yt-dlp.exe')">
     <Message Importance="high" Text="Ensuring private media tools are present..." />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\tools\fetch-tools.ps1&quot;" />
+  </Target>
+
+  <!-- WinUI XAML lives in the .pri; dotnet publish sometimes omits it for unpackaged apps. -->
+  <Target Name="CopyPriToPublishDir" AfterTargets="Publish">
+    <ItemGroup>
+      <_AppPri Include="$(OutDir)$(AssemblyName).pri" Condition="Exists('$(OutDir)$(AssemblyName).pri')" />
+      <_AppPri Include="$(ProjectDir)$(OutputPath)$(AssemblyName).pri" Condition="Exists('$(ProjectDir)$(OutputPath)$(AssemblyName).pri')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_AppPri)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and '@(_AppPri)' != ''" />
   </Target>
 </Project>

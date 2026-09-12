@@ -24,10 +24,8 @@
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
 
-      <Border Width="28" Height="28" CornerRadius="4" Background="{StaticResource AccentBrush}" VerticalAlignment="Center">
-        <TextBlock Text="M" FontWeight="Bold" FontSize="16" Foreground="{StaticResource SurfaceBrush}"
-                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-      </Border>
+      <Image Grid.Column="0" Source="ms-appx:///Assets/MicPipe.png" Width="28" Height="28"
+             Stretch="Uniform" VerticalAlignment="Center" />
       <TextBlock Grid.Column="1" Text="MicPipe" FontSize="22" FontWeight="SemiBold"
                  Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
 

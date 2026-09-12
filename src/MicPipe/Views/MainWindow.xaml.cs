@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(560, 280));
         ExtendsContentIntoTitleBar = true;
+        TrySetWindowIcon();
 
         MicVolumeSlider.Value = AppServices.Settings.MicVolume * 100;
         ClipVolumeSlider.Value = AppServices.Settings.ClipVolume * 100;
@@ -29,6 +30,22 @@ public sealed partial class MainWindow : Window
             LastClipLabel.Text = string.IsNullOrEmpty(name) ? "Last: —" : $"Last: \"{name}\"";
         });
         UpdateLive();
+    }
+
+    private void TrySetWindowIcon()
+    {
+        try
+        {
+            var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "MicPipe.ico");
+            if (File.Exists(iconPath))
+            {
+                AppWindow.SetIcon(iconPath);
+            }
+        }
+        catch
+        {
+            // non-fatal
+        }
     }
 
     private void UpdateLive()
