@@ -79,7 +79,7 @@ Add a license if/when you publish the repo formally.
 
 Built in Cursor, prompt by prompt:
 
-1. **Initial prompt** — Plan and implement a Windows-native app that pipes clip audio to microphone-out (for proximity chat / games), with mic pass-through, volume control, separate tool windows (not one dashboard), URL + file clip import with scrubbing, and F-row hotkeys. Stack settled on .NET 10 + WinUI 3, VB-Audio Virtual Cable as the external dependency, FFmpeg/yt-dlp private and opaque. Repo pushed to GitHub; README added.
+1. **Initial prompt** — Plan and implement a Windows-native app that pipes clip audio to microphone-out (for proximity chat / games), with mic pass-through, volume control, separate tool windows (not one dashboard), URL + file clip import with scrubbing, and F-row hotkeys. Had to tell it to use .NET 10 and WinUI 3, but otherwise it did everything. Stack also settled on VB-Audio Virtual Cable as the external dependency, FFmpeg/yt-dlp private and opaque. Repo pushed to GitHub; README added.
 
 2. **It didn’t load** — Published `MicPipe.exe` crashed on launch (`Cannot locate resource from 'ms-appx:///Views/MainWindow.xaml'`). One follow-up prompt: diagnose, fix publish so `MicPipe.pri` ships next to the exe, relaunch. It stayed up.
 
