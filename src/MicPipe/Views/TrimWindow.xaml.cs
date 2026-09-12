@@ -94,7 +94,12 @@ public sealed partial class TrimWindow : Window
         }
     }
 
-    public void LoadSource(string path, string? suggestedName, string? editClipId = null)
+    public void LoadSource(
+        string path,
+        string? suggestedName,
+        string? editClipId = null,
+        TimeSpan? suggestedTrimStart = null,
+        TimeSpan? suggestedTrimEnd = null)
     {
         StopPlayhead();
         _sourcePath = path;
@@ -108,8 +113,29 @@ public sealed partial class TrimWindow : Window
         _peaks = WaveformBuilder.BuildPeaks(path);
         EndLabel.Text = Format(_duration);
         _ready = true;
-        StartSlider.Value = 0;
-        EndSlider.Value = 1000;
+
+        var startRatio = 0.0;
+        var endRatio = 1.0;
+        if (_duration > TimeSpan.Zero)
+        {
+            if (suggestedTrimStart is TimeSpan ts && ts > TimeSpan.Zero)
+            {
+                startRatio = Math.Clamp(ts.TotalSeconds / _duration.TotalSeconds, 0, 1);
+            }
+
+            if (suggestedTrimEnd is TimeSpan te && te > TimeSpan.Zero)
+            {
+                endRatio = Math.Clamp(te.TotalSeconds / _duration.TotalSeconds, 0, 1);
+            }
+
+            if (endRatio <= startRatio)
+            {
+                endRatio = Math.Min(1, startRatio + 0.01);
+            }
+        }
+
+        StartSlider.Value = startRatio * 1000;
+        EndSlider.Value = endRatio * 1000;
         UpdateLabels();
         DrawWaveform();
     }

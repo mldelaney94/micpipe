@@ -73,11 +73,16 @@ public sealed partial class ImportWindow : Window
         {
             var start = ParseTime(FromBox.Text);
             var end = ParseTime(ToBox.Text);
-            var path = await AppServices.UrlFetcher.FetchAsync(UrlBox.Text.Trim(), start, end);
+            var result = await AppServices.UrlFetcher.FetchAsync(UrlBox.Text.Trim(), start, end);
             var name = string.IsNullOrWhiteSpace(NameBox.Text)
                 ? "clip"
                 : NameBox.Text.Trim();
-            WindowHub.OpenTrim(path, name);
+            WindowHub.OpenTrim(
+                result.Path,
+                name,
+                editClipId: null,
+                suggestedTrimStart: result.SuggestedTrimStart,
+                suggestedTrimEnd: result.SuggestedTrimEnd);
             Close();
         }
         catch (Exception ex)

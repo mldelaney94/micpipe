@@ -4,8 +4,22 @@ using MicPipe.Data;
 
 namespace MicPipe.Import;
 
+public sealed class UrlFetchResult
+{
+    public required string Path { get; init; }
+
+    /// <summary>Suggested selection start within the downloaded file (after pad).</summary>
+    public TimeSpan? SuggestedTrimStart { get; init; }
+
+    /// <summary>Suggested selection end within the downloaded file (after pad).</summary>
+    public TimeSpan? SuggestedTrimEnd { get; init; }
+}
+
 public sealed class UrlAudioFetcher
 {
+    /// <summary>Extra media fetched before/after the requested section so trim edits need fewer re-fetches.</summary>
+    public const double SectionPadSeconds = 2;
+
     private readonly ToolResolver _tools;
 
     public UrlAudioFetcher(ToolResolver tools)
@@ -13,7 +27,7 @@ public sealed class UrlAudioFetcher
         _tools = tools;
     }
 
-    public async Task<string> FetchAsync(
+    public async Task<UrlFetchResult> FetchAsync(
         string url,
         TimeSpan? start,
         TimeSpan? end,
@@ -38,10 +52,17 @@ public sealed class UrlAudioFetcher
             "--no-progress"
         };
 
+        TimeSpan? suggestedStart = null;
+        TimeSpan? suggestedEnd = null;
+
         if (start is not null || end is not null)
         {
+            var (fetchStart, fetchEnd, trimStart, trimEnd) = ApplySectionPad(start, end);
+            suggestedStart = trimStart;
+            suggestedEnd = trimEnd;
+
             args.Add("--download-sections");
-            args.Add(Quote("*" + FormatSection(start, end)));
+            args.Add(Quote("*" + FormatSection(fetchStart, fetchEnd)));
             args.Add("--force-keyframes-at-cuts");
         }
 
@@ -66,14 +87,41 @@ public sealed class UrlAudioFetcher
             throw new InvalidOperationException("Couldn't fetch that URL.");
         }
 
-        return file;
+        return new UrlFetchResult
+        {
+            Path = file,
+            SuggestedTrimStart = suggestedStart,
+            SuggestedTrimEnd = suggestedEnd
+        };
     }
 
-    private static string FormatSection(TimeSpan? start, TimeSpan? end)
+    /// <summary>
+    /// Expands the requested range by <see cref="SectionPadSeconds"/> on each side (start floored at 0).
+    /// Returns fetch bounds plus the original range mapped into the padded file.
+    /// </summary>
+    internal static (TimeSpan FetchStart, TimeSpan? FetchEnd, TimeSpan TrimStart, TimeSpan? TrimEnd)
+        ApplySectionPad(TimeSpan? start, TimeSpan? end)
     {
-        var a = start ?? TimeSpan.Zero;
-        // yt-dlp accepts seconds in section ranges, e.g. *0-6
-        var startSec = a.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+        var pad = TimeSpan.FromSeconds(SectionPadSeconds);
+        var requestedStart = start ?? TimeSpan.Zero;
+        if (requestedStart < TimeSpan.Zero)
+        {
+            requestedStart = TimeSpan.Zero;
+        }
+
+        var fetchStart = requestedStart > pad ? requestedStart - pad : TimeSpan.Zero;
+        TimeSpan? fetchEnd = end is null ? null : end.Value + pad;
+
+        // Original range relative to the start of the downloaded file
+        var trimStart = requestedStart - fetchStart;
+        TimeSpan? trimEnd = end is null ? null : end.Value - fetchStart;
+
+        return (fetchStart, fetchEnd, trimStart, trimEnd);
+    }
+
+    private static string FormatSection(TimeSpan start, TimeSpan? end)
+    {
+        var startSec = start.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         if (end is null)
         {
             return startSec + "-inf";

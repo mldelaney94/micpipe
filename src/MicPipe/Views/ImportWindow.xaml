@@ -32,6 +32,8 @@
             <TextBox x:Name="FromBox" Header="From (seconds, or mm:ss)" PlaceholderText="0" />
             <TextBox x:Name="ToBox" Grid.Column="1" Header="To (seconds, or mm:ss)" PlaceholderText="6" />
           </Grid>
+          <TextBlock Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                     Text="Section fetches include ~2s of padding before and after so you can nudge the trim without re-downloading." />
           <TextBox x:Name="NameBox" Header="Name" PlaceholderText="clip name" />
           <TextBlock x:Name="StatusText" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
         </StackPanel>

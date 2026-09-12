@@ -20,11 +20,16 @@ public static class WindowHub
         _import.Activate();
     }
 
-    public static void OpenTrim(string sourcePath, string? suggestedName = null, string? editClipId = null)
+    public static void OpenTrim(
+        string sourcePath,
+        string? suggestedName = null,
+        string? editClipId = null,
+        TimeSpan? suggestedTrimStart = null,
+        TimeSpan? suggestedTrimEnd = null)
     {
         _trim ??= new TrimWindow();
         _trim.Closed += (_, _) => _trim = null;
-        _trim.LoadSource(sourcePath, suggestedName, editClipId);
+        _trim.LoadSource(sourcePath, suggestedName, editClipId, suggestedTrimStart, suggestedTrimEnd);
         _trim.Activate();
     }
 
