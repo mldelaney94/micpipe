@@ -77,10 +77,31 @@ Add a license if/when you publish the repo formally.
 
 ## How this was made
 
-Built in Cursor, prompt by prompt:
+Built in Cursor, prompt by prompt. Rough log of what was asked:
 
-1. **Initial prompt** — Plan and implement a Windows-native app that pipes clip audio to microphone-out (for proximity chat / games), with mic pass-through, volume control, separate tool windows (not one dashboard), URL + file clip import with scrubbing, and F-row hotkeys. Had to tell it to use .NET 10 and WinUI 3, but otherwise it did everything. Stack also settled on VB-Audio Virtual Cable as the external dependency, FFmpeg/yt-dlp private and opaque. Repo pushed to GitHub; README added.
+1. **Initial prompt** — Plan and implement a Windows-native app that pipes clip audio to microphone-out (for proximity chat / games), with mic pass-through, volume control, a toolbar with logo, separate tool windows (not one dashboard), URL + file clip import with scrubbing, and F-row hotkeys.  
+   Follow-ups in planning: use a Virtual Cable **dependency**; windows launch as separate menus; use **.NET 10** (not 8); ship FFmpeg/yt-dlp **opaque/internal**; use **WinUI 3**. Had to steer stack to .NET 10 + WinUI 3, but otherwise it did the rest. Then: implement the plan; compile to an exe; upload to GitHub; add a README.
 
-2. **It didn’t load** — Published `MicPipe.exe` crashed on launch (`Cannot locate resource from 'ms-appx:///Views/MainWindow.xaml'`). One follow-up prompt: diagnose, fix publish so `MicPipe.pri` ships next to the exe, relaunch. It stayed up.
+2. **It didn’t load** — “Try running it yourself, does it launch?” Published exe crashed (`Cannot locate resource from 'ms-appx:///Views/MainWindow.xaml'`). Fix: ensure `MicPipe.pri` is copied into the publish output. One prompt away from working.
 
-3. **Give it a logo** — Generate a charcoal/amber MicPipe mark, put it on the main toolbar (and window/tray icons), republish, relaunch.
+3. **Give it a logo** — Generate a logo and put it on the toolbar; relaunch.
+
+4. **Document the build story** — Add a step-by-step “how this was created” section to the README (this section). Note in the initial-prompt blurb that .NET 10 / WinUI 3 had to be specified.
+
+5. **Why Virtual Cable?** — Explanation: Windows won’t let a normal app become the microphone without a driver.
+
+6. **UI overlaps the X** — Devices/Clips overlapped the window close buttons. Fix custom title bar / caption spacing; move actions off the caption strip. Also: no Quit button (use the corner X / tray).
+
+7. **Devices / main sizing** — Devices (then main) should show the full button row on startup, be scrollable, and not require resizing.
+
+8. **Import / YouTube** — Where is URL import? (Import clip.) Make Import bigger; treat bare numbers as **seconds** (e.g. `0`–`6`), not only `hh:mm:ss`; fix fetch (point the downloader at private FFmpeg).
+
+9. **Button hover flash** — Hover was flashing through theme colours. Flat style: one colour, optional short fade.
+
+10. **Scrubber / PTT / clips UX** — Bigger scrubber; Play selection should be **audible** locally; auto hold a push-to-talk key while clips play; clips right-click rename / edit back in scrubber. Then: a **PTT** button next to Clips that sets/shows the binding. Enter saves in rename. PTT can bind **mouse buttons** (e.g. Mouse4).
+
+11. **Playback scrub animation** — While playing, scroll/scrub a colour along the waveform (and progress on main / in the Clips list) so you know it’s working.
+
+12. **Per-clip global hotkeys** — In Clips, each row gets a Bind control: “select any key”, then that key globally plays the clip to mic-out **and** holds PTT. Bind dialog must close on success (including F1) and the button must show the bound key instead of “Bind”.
+
+13. **This prompt** — Write all of the above prompts into the README.
