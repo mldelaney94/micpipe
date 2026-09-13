@@ -1,11 +1,9 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using Microsoft.UI.Dispatching;
-using Microsoft.UI.Input;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using MicPipe.Audio;
 using MicPipe.Services;
 using Windows.System;
 
@@ -14,140 +12,116 @@ namespace MicPipe.Views;
 public sealed partial class LibraryWindow : Window
 {
     private readonly List<ClipRow> _rows = new();
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _playTimer;
-    private string? _playingClipId;
-    private string? _bindingClipId;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _playTimer;
+    private readonly EventHandler<ActiveClip?> _onClipChanged;
+    private ClipRow? _playingRow;
+
+    // Set while the "Bind hotkey" dialog is open; mouse binds arrive on the window, not the dialog.
     private ContentDialog? _bindDialog;
-    private bool _bindCompleted;
+    private ClipRow? _bindingRow;
+
+    // Dialogs render in the XamlRoot's popup root, outside this window's resource scope. A dictionary can only be
+    // owned by one element, so each dialog loads its own copy of this window's stylesheet.
+    private static ResourceDictionary WindowPalette =>
+        new() { Source = new Uri("ms-appx:///Views/LibraryWindow.Styles.xaml") };
 
     public LibraryWindow()
     {
         InitializeComponent();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(768, 672));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = 624;
-            presenter.PreferredMinimumHeight = 504;
-        }
-
+        WindowSetup.Apply(this, 768, 672, 624, 504);
         Content.PointerPressed += Content_PointerPressed;
 
         _playTimer = DispatcherQueue.CreateTimer();
         _playTimer.Interval = TimeSpan.FromMilliseconds(33);
-        _playTimer.Tick += (_, _) => UpdatePlayProgress();
+        _playTimer.Tick += (_, _) =>
+        {
+            if (_playingRow is null || AppServices.Engine.GetClipProgress() is not double progress)
+            {
+                ShowPlaying(null);
+            }
+            else
+            {
+                _playingRow.Progress = progress;
+            }
+        };
 
-        AppServices.Engine.ClipChanged += (_, name) => DispatcherQueue.TryEnqueue(() => OnClipChanged(name));
+        _onClipChanged = (_, clip) => DispatcherQueue.TryEnqueue(() =>
+            ShowPlaying(clip is null ? null : _rows.FirstOrDefault(r => r.Path == clip.Path)));
+        AppServices.Engine.ClipChanged += _onClipChanged;
+        Closed += (_, _) =>
+        {
+            _playTimer.Stop();
+            AppServices.Engine.ClipChanged -= _onClipChanged;
+        };
 
         Refresh();
     }
 
     public void Refresh()
     {
-        var binds = AppServices.Settings.ClipKeybinds
+        var labels = AppServices.Settings.ClipKeybinds
             .GroupBy(b => b.ClipId)
             .ToDictionary(g => g.Key, g => g.First().Label);
 
-        foreach (var kv in AppServices.Settings.HotkeyBindings)
-        {
-            if (!string.IsNullOrWhiteSpace(kv.Value) && !binds.ContainsKey(kv.Value))
-            {
-                binds[kv.Value] = kv.Key;
-            }
-        }
-
         _rows.Clear();
-        foreach (var c in AppServices.Library.Clips)
+        foreach (var clip in AppServices.Library.Clips)
         {
             _rows.Add(new ClipRow
             {
-                Id = c.Id,
-                Name = c.Name,
-                DurationText = TimeSpan.FromSeconds(c.DurationSeconds).ToString(@"m\:ss"),
-                HotkeyLabel = binds.TryGetValue(c.Id, out var hk) ? hk : null
+                Id = clip.Id,
+                Name = clip.Name,
+                Path = AppServices.Library.GetPath(clip),
+                DurationText = TimeSpan.FromSeconds(clip.DurationSeconds).ToString(@"m\:ss"),
+                HotkeyLabel = labels.GetValueOrDefault(clip.Id)
             });
         }
 
         ClipList.ItemsSource = null;
         ClipList.ItemsSource = _rows;
+        ShowPlaying(AppServices.Engine.Current is ActiveClip current ? _rows.FirstOrDefault(r => r.Path == current.Path) : null);
     }
 
     private ClipRow? Selected => ClipList.SelectedItem as ClipRow;
 
-    private void OnClipChanged(string? name)
+    private void ShowPlaying(ClipRow? row)
     {
-        foreach (var row in _rows)
+        foreach (var r in _rows)
         {
-            row.Progress = 0;
-            row.IsPlaying = false;
+            r.IsPlaying = false;
+            r.Progress = 0;
         }
 
-        if (string.IsNullOrEmpty(name))
+        _playingRow = row;
+        if (row is null)
         {
-            _playingClipId = null;
-            _playTimer?.Stop();
-            return;
+            _playTimer.Stop();
         }
-
-        var match = _rows.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.Ordinal));
-        _playingClipId = match?.Id;
-        if (match is not null)
-        {
-            match.IsPlaying = true;
-            _playTimer?.Start();
-        }
-    }
-
-    private void UpdatePlayProgress()
-    {
-        if (!AppServices.Engine.IsClipPlaying || _playingClipId is null)
-        {
-            foreach (var r in _rows)
-            {
-                r.IsPlaying = false;
-                r.Progress = 0;
-            }
-
-            _playTimer?.Stop();
-            return;
-        }
-
-        var progress = AppServices.Engine.GetClipProgress() ?? 0;
-        var row = _rows.FirstOrDefault(r => r.Id == _playingClipId);
-        if (row is not null)
+        else
         {
             row.IsPlaying = true;
-            row.Progress = progress;
+            _playTimer.Start();
         }
     }
+
+    // --- Hotkey binding ---------------------------------------------------------
 
     private async void BindRow_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button || (sender as Button)?.Tag is not ClipRow row)
+        if ((sender as Button)?.Tag is not ClipRow row || _bindDialog is not null)
         {
             return;
         }
 
         ClipList.SelectedItem = row;
-        _bindingClipId = row.Id;
-        _bindCompleted = false;
+        _bindingRow = row;
 
-        var hint = new TextBlock
-        {
-            Text = "Select any key (F1–F12, letters, or Mouse4/5).\nEsc cancels.",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
-        };
-
-        // Focusable surface that actually receives F-keys
-        var capture = new Button
-        {
-            Content = "Waiting for key…",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Style = (Style)Application.Current.Resources["ToolButtonStyle"]
-        };
-
+        var capture = new Button { Content = "Waiting for key…", HorizontalAlignment = HorizontalAlignment.Stretch };
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(hint);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Press any key (F1–F12, letters, or Mouse4/5). Esc cancels.",
+            TextWrapping = TextWrapping.Wrap
+        });
         panel.Children.Add(capture);
 
         _bindDialog = new ContentDialog
@@ -155,211 +129,125 @@ public sealed partial class LibraryWindow : Window
             Title = "Bind hotkey",
             Content = panel,
             CloseButtonText = "Cancel",
-            XamlRoot = Content.XamlRoot
+            XamlRoot = Content.XamlRoot,
+            Resources = WindowPalette
         };
 
-        void OnKey(object s, KeyRoutedEventArgs args)
-        {
-            if (_bindingClipId is null)
-            {
-                return;
-            }
-
-            args.Handled = true;
-            if (args.Key is VirtualKey.Escape)
-            {
-                CancelBind();
-                return;
-            }
-
-            // Skip modifier-only presses
-            if (args.Key is VirtualKey.Shift or VirtualKey.Control or VirtualKey.Menu or VirtualKey.LeftWindows
-                or VirtualKey.RightWindows or VirtualKey.LeftShift or VirtualKey.RightShift
-                or VirtualKey.LeftControl or VirtualKey.RightControl or VirtualKey.LeftMenu or VirtualKey.RightMenu)
-            {
-                return;
-            }
-
-            CompleteBind(isMouse: false, code: (int)args.Key, label: FormatKeyLabel(args.Key));
-        }
-
-        capture.KeyDown += OnKey;
-        capture.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKey), handledEventsToo: true);
-        panel.KeyDown += OnKey;
-        _bindDialog.KeyDown += OnKey;
-
-        _bindDialog.Opened += async (_, _) =>
-        {
-            await Task.Delay(50);
-            capture.Focus(FocusState.Programmatic);
-        };
-
+        // handledEventsToo: the Button marks Space/Enter handled before the dialog would see them.
+        _bindDialog.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(BindDialog_KeyDown), handledEventsToo: true);
+        _bindDialog.Opened += (_, _) => capture.Focus(FocusState.Programmatic);
         _bindDialog.Closed += (_, _) =>
         {
-            if (!_bindCompleted)
-            {
-                _bindingClipId = null;
-            }
-
             _bindDialog = null;
+            _bindingRow = null;
         };
 
-        _ = await _bindDialog.ShowAsync();
+        await _bindDialog.ShowAsync();
     }
 
-    private static string FormatKeyLabel(VirtualKey key)
+    private void BindDialog_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        var name = key.ToString();
-        if (name.StartsWith("Number", StringComparison.Ordinal) && name.Length == 7)
+        e.Handled = true;
+        if (e.Key == VirtualKey.Escape)
         {
-            return name[^1].ToString();
+            _bindDialog?.Hide();
         }
-
-        return name;
-    }
-
-    private void CancelBind()
-    {
-        _bindingClipId = null;
-        _bindCompleted = false;
-        _bindDialog?.Hide();
-    }
-
-    private void CompleteBind(bool isMouse, int code, string label)
-    {
-        if (_bindingClipId is null || _bindCompleted)
+        else if (!InputCapture.IsModifier(e.Key))
         {
-            return;
+            CompleteBind((int)e.Key, isMouse: false, InputCapture.KeyLabel(e.Key));
         }
-
-        var clipId = _bindingClipId;
-        var row = _rows.FirstOrDefault(r => r.Id == clipId);
-
-        _bindCompleted = true;
-        _bindingClipId = null;
-
-        AppServices.Hotkeys.BindClip(clipId, code, isMouse, label);
-
-        if (row is not null)
-        {
-            row.HotkeyLabel = label;
-        }
-        else
-        {
-            Refresh();
-        }
-
-        WindowHub.RefreshHotkeysIfOpen();
-        _bindDialog?.Hide();
     }
 
     private void Content_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (_bindingClipId is null || _bindDialog is null)
+        if (_bindingRow is not null && InputCapture.BindableMouseButton(e, Content) is int button)
         {
-            return;
+            e.Handled = true;
+            CompleteBind(button, isMouse: true, "Mouse" + button);
         }
-
-        var kind = e.GetCurrentPoint(Content).Properties.PointerUpdateKind;
-        int? button = kind switch
-        {
-            PointerUpdateKind.XButton1Pressed => 4,
-            PointerUpdateKind.XButton2Pressed => 5,
-            PointerUpdateKind.MiddleButtonPressed => 3,
-            _ => null
-        };
-
-        if (button is null)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        CompleteBind(isMouse: true, code: button.Value, label: "Mouse" + button.Value);
     }
+
+    private void CompleteBind(int code, bool isMouse, string label)
+    {
+        if (_bindingRow is not ClipRow row)
+        {
+            return;
+        }
+
+        _bindingRow = null;
+        AppServices.Hotkeys.BindClip(row.Id, code, isMouse, label);
+        // One key per clip: drop the label from whichever row previously held this key.
+        foreach (var other in _rows.Where(r => r != row && r.HotkeyLabel == label))
+        {
+            other.HotkeyLabel = null;
+        }
+
+        row.HotkeyLabel = label;
+        WindowHub.RefreshHotkeysIfOpen();
+        _bindDialog?.Hide();
+    }
+
+    private void ClearBind(ClipRow row)
+    {
+        AppServices.Hotkeys.ClearClipBind(row.Id);
+        row.HotkeyLabel = null;
+        WindowHub.RefreshHotkeysIfOpen();
+    }
+
+    // --- Row actions -------------------------------------------------------------
 
     private void ClipList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        var row = (e.OriginalSource as FrameworkElement)?.DataContext as ClipRow ?? Selected;
-        if (row is null && e.OriginalSource is FrameworkElement fe)
-        {
-            var item = fe;
-            while (item is not null && item is not ListViewItem)
-            {
-                item = item.Parent as FrameworkElement;
-            }
-
-            if (item is ListViewItem lvi)
-            {
-                row = lvi.Content as ClipRow;
-            }
-        }
-
-        if (row is null)
+        if (((e.OriginalSource as FrameworkElement)?.DataContext as ClipRow ?? Selected) is not ClipRow row)
         {
             return;
         }
 
         ClipList.SelectedItem = row;
         var flyout = new MenuFlyout();
-        var rename = new MenuFlyoutItem { Text = "Rename" };
-        rename.Click += async (_, _) => await RenameAsync(row);
-        var edit = new MenuFlyoutItem { Text = "Edit in scrubber" };
-        edit.Click += (_, _) => EditClip(row);
-        var clearBind = new MenuFlyoutItem { Text = "Clear hotkey" };
-        clearBind.Click += (_, _) =>
-        {
-            AppServices.Hotkeys.ClearClipBind(row.Id);
-            row.HotkeyLabel = null;
-            WindowHub.RefreshHotkeysIfOpen();
-        };
-        var del = new MenuFlyoutItem { Text = "Delete" };
-        del.Click += (_, _) =>
-        {
-            AppServices.Library.Delete(row.Id);
-            AppServices.Hotkeys.ClearClipBind(row.Id);
-            Refresh();
-            WindowHub.RefreshHotkeysIfOpen();
-        };
-        flyout.Items.Add(rename);
-        flyout.Items.Add(edit);
-        flyout.Items.Add(clearBind);
-        flyout.Items.Add(del);
+        flyout.Items.Add(MenuItem("Rename", async () => await RenameAsync(row)));
+        flyout.Items.Add(MenuItem("Edit in trimmer", () => EditClip(row)));
+        flyout.Items.Add(MenuItem("Clear hotkey", () => ClearBind(row)));
+        flyout.Items.Add(MenuItem("Delete", () => DeleteClip(row)));
         flyout.ShowAt(ClipList, e.GetPosition(ClipList));
     }
 
-    private void Play_Click(object sender, RoutedEventArgs e)
+    private static MenuFlyoutItem MenuItem(string text, Action action)
     {
-        var row = Selected;
-        if (row is null || !AppServices.Library.TryGet(row.Id, out var entry) || entry is null)
-        {
-            return;
-        }
+        var item = new MenuFlyoutItem { Text = text };
+        item.Click += (_, _) => action();
+        return item;
+    }
 
-        AppServices.Engine.PlayClip(AppServices.Library.GetPath(entry), entry.Name);
+    private async void Play_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is ClipRow row)
+        {
+            // Decoding happens inside PlayClip; keep it off the UI thread.
+            await Task.Run(() => AppServices.Engine.PlayClip(row.Path, row.Name));
+        }
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e) => AppServices.Engine.StopClip();
 
     private async void Rename_Click(object sender, RoutedEventArgs e)
     {
-        if (Selected is ClipRow row)
-        {
-            await RenameAsync(row);
-        }
+        if (Selected is ClipRow row) await RenameAsync(row);
     }
 
     private void Edit_Click(object sender, RoutedEventArgs e)
     {
-        if (Selected is ClipRow row)
-        {
-            EditClip(row);
-        }
+        if (Selected is ClipRow row) EditClip(row);
+    }
+
+    private void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is ClipRow row) DeleteClip(row);
     }
 
     private async Task RenameAsync(ClipRow row)
     {
-        var box = new TextBox { Text = row.Name, AcceptsReturn = false };
+        var box = new TextBox { Text = row.Name };
         var dialog = new ContentDialog
         {
             Title = "Rename clip",
@@ -367,44 +255,22 @@ public sealed partial class LibraryWindow : Window
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = Content.XamlRoot
+            XamlRoot = Content.XamlRoot,
+            Resources = WindowPalette
         };
 
-        var savedWithEnter = false;
-        box.KeyDown += (_, e) =>
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && box.Text.Trim() is { Length: > 0 } name)
         {
-            if (e.Key != VirtualKey.Enter)
-            {
-                return;
-            }
-
-            e.Handled = true;
-            savedWithEnter = true;
-            dialog.Hide();
-        };
-
-        var result = await dialog.ShowAsync();
-        if (savedWithEnter || result == ContentDialogResult.Primary)
-        {
-            AppServices.Library.Rename(row.Id, box.Text.Trim());
+            AppServices.Library.Rename(row.Id, name);
             Refresh();
         }
     }
 
-    private void EditClip(ClipRow row)
-    {
-        if (!AppServices.Library.TryGet(row.Id, out var entry) || entry is null)
-        {
-            return;
-        }
+    private static void EditClip(ClipRow row) =>
+        WindowHub.OpenTrim(new TrimRequest(row.Path, row.Name, EditClipId: row.Id));
 
-        WindowHub.OpenTrim(AppServices.Library.GetPath(entry), entry.Name, entry.Id);
-    }
-
-    private void Delete_Click(object sender, RoutedEventArgs e)
+    private void DeleteClip(ClipRow row)
     {
-        var row = Selected;
-        if (row is null) return;
         AppServices.Library.Delete(row.Id);
         AppServices.Hotkeys.ClearClipBind(row.Id);
         Refresh();
@@ -417,9 +283,10 @@ public sealed partial class LibraryWindow : Window
         private bool _isPlaying;
         private string? _hotkeyLabel;
 
-        public string Id { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string DurationText { get; set; } = "";
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        public required string Path { get; init; }
+        public required string DurationText { get; init; }
 
         public string? HotkeyLabel
         {
@@ -432,8 +299,7 @@ public sealed partial class LibraryWindow : Window
             }
         }
 
-        public string BindButtonText =>
-            string.IsNullOrWhiteSpace(HotkeyLabel) ? "Bind" : HotkeyLabel!;
+        public string BindButtonText => string.IsNullOrWhiteSpace(HotkeyLabel) ? "Bind" : HotkeyLabel;
 
         public double Progress
         {
@@ -458,8 +324,7 @@ public sealed partial class LibraryWindow : Window
             }
         }
 
-        public Visibility ProgressVisibility =>
-            IsPlaying ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility ProgressVisibility => IsPlaying ? Visibility.Visible : Visibility.Collapsed;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

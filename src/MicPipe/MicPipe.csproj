@@ -14,17 +14,19 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <EnableMsixTooling>false</EnableMsixTooling>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <ApplicationIcon>Assets\MicPipe.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.6584" />
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\MicPipe.Core\MicPipe.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Bundled assets and private media tools land next to the exe (build and publish). -->
   <ItemGroup>
     <Content Include="Assets\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -46,11 +48,10 @@
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\tools\fetch-tools.ps1&quot;" />
   </Target>
 
-  <!-- WinUI XAML lives in the .pri; dotnet publish sometimes omits it for unpackaged apps. -->
+  <!-- XAML is loaded from MicPipe.pri (ms-appx); publish for unpackaged apps can omit it. -->
   <Target Name="CopyPriToPublishDir" AfterTargets="Publish">
     <ItemGroup>
       <_AppPri Include="$(OutDir)$(AssemblyName).pri" Condition="Exists('$(OutDir)$(AssemblyName).pri')" />
-      <_AppPri Include="$(ProjectDir)$(OutputPath)$(AssemblyName).pri" Condition="Exists('$(ProjectDir)$(OutputPath)$(AssemblyName).pri')" />
     </ItemGroup>
     <Copy SourceFiles="@(_AppPri)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and '@(_AppPri)' != ''" />
   </Target>

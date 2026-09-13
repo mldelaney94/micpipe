@@ -3,61 +3,37 @@ using MicPipe.Views;
 
 namespace MicPipe.Services;
 
+/// <summary>One instance of each tool window at a time; reopening brings the existing one forward.</summary>
 public static class WindowHub
 {
-    public static Window? Main { get; set; }
+    private static readonly Slot<ImportWindow> Import = new();
+    private static readonly Slot<TrimWindow> Trim = new();
+    private static readonly Slot<HotkeysWindow> Hotkeys = new();
+    private static readonly Slot<DevicesWindow> Devices = new();
+    private static readonly Slot<LibraryWindow> Library = new();
 
-    private static ImportWindow? _import;
-    private static TrimWindow? _trim;
-    private static HotkeysWindow? _hotkeys;
-    private static DevicesWindow? _devices;
-    private static LibraryWindow? _library;
+    public static void OpenImport() => Import.Show(() => new ImportWindow());
+    public static void OpenDevices() => Devices.Show(() => new DevicesWindow());
+    public static void OpenLibrary() => Library.Show(() => new LibraryWindow()).Refresh();
+    public static void OpenHotkeys() => Hotkeys.Show(() => new HotkeysWindow()).Refresh();
+    public static void OpenTrim(TrimRequest request) => Trim.Show(() => new TrimWindow()).Load(request);
 
-    public static void OpenImport()
+    public static void RefreshHotkeysIfOpen() => Hotkeys.Current?.Refresh();
+
+    private sealed class Slot<T> where T : Window
     {
-        _import ??= new ImportWindow();
-        _import.Closed += (_, _) => _import = null;
-        _import.Activate();
-    }
+        public T? Current { get; private set; }
 
-    public static void OpenTrim(
-        string sourcePath,
-        string? suggestedName = null,
-        string? editClipId = null,
-        TimeSpan? suggestedTrimStart = null,
-        TimeSpan? suggestedTrimEnd = null)
-    {
-        _trim ??= new TrimWindow();
-        _trim.Closed += (_, _) => _trim = null;
-        _trim.LoadSource(sourcePath, suggestedName, editClipId, suggestedTrimStart, suggestedTrimEnd);
-        _trim.Activate();
-    }
+        public T Show(Func<T> create)
+        {
+            if (Current is null)
+            {
+                Current = create();
+                Current.Closed += (_, _) => Current = null;
+            }
 
-    public static void OpenHotkeys(string? focusClipId = null)
-    {
-        _hotkeys ??= new HotkeysWindow();
-        _hotkeys.Closed += (_, _) => _hotkeys = null;
-        _hotkeys.Refresh(focusClipId);
-        _hotkeys.Activate();
-    }
-
-    public static void RefreshHotkeysIfOpen()
-    {
-        _hotkeys?.Refresh();
-    }
-
-    public static void OpenDevices()
-    {
-        _devices ??= new DevicesWindow();
-        _devices.Closed += (_, _) => _devices = null;
-        _devices.Activate();
-    }
-
-    public static void OpenLibrary()
-    {
-        _library ??= new LibraryWindow();
-        _library.Closed += (_, _) => _library = null;
-        _library.Refresh();
-        _library.Activate();
+            Current.Activate();
+            return Current;
+        }
     }
 }

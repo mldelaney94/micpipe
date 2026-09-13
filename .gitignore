@@ -1,19 +1,13 @@
 ## .NET
 bin/
 obj/
-[Bb]uild/
-[Ll]og/
-[Ll]ogs/
+.vs/
 *.user
 *.suo
-*.userosscache
-*.sln.docstates
-.vs/
 *.nupkg
-project.lock.json
 artifacts/
 
-artifacts/
+## Private media tools (fetched by tools/fetch-tools.ps1)
 tools/ffmpeg/
 tools/yt-dlp/
 

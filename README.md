@@ -22,6 +22,7 @@ FFmpeg and yt-dlp are **bundled privately** when you build/publish. End users do
 3. In MicPipe → **Devices**:
    - Microphone → your real mic (e.g. Snowball)
    - Virtual cable output → **CABLE Input (VB-Audio Virtual Cable)**
+   - Hear clips on → your headphones/speakers (or leave it on default speakers)
 4. **In the game (or Discord) voice settings**, set the microphone / input device to:
 
    **CABLE Output (VB-Audio Virtual Cable)**
@@ -30,7 +31,7 @@ FFmpeg and yt-dlp are **bundled privately** when you build/publish. End users do
 
 5. Optional: Windows **Settings → System → Sound → Input** (and communication defaults) → **CABLE Output**, if the game follows the system default.
 
-6. On the main window, set **PTT** to the same key/button the game uses for talk (e.g. Mouse5). Bind clips in **Clips** (e.g. F1). Pressing the bind holds PTT for the clip length and plays into the cable.
+6. On the main window, click **PTT** and press the key/button the game uses for talk (e.g. Mouse5; Esc cancels, Backspace clears). Bind clips in **Clips** (any key or Mouse4/5) or assign F1–F12 in **Hotkeys**. Pressing a bind plays the clip into the cable and holds PTT until ~300 ms after it ends.
 
 Keep the whole `win-x64` folder together when you move the app.
 
@@ -48,6 +49,18 @@ dotnet build MicPipe.sln -c Debug -p:Platform=x64
 dotnet run --project src\MicPipe\MicPipe.csproj -c Debug -p:Platform=x64
 ```
 
+Layout:
+
+- `src/MicPipe.Core` — UI-free logic: `Audio` (engine, clip player), `Data` (settings, clip library, log), `Import` (ffmpeg/yt-dlp wrappers, waveform), `Services` (push-to-talk key injection). Builds on NAudio 3.
+- `src/MicPipe` — WinUI 3 app. One window per screen under `Views/`, each with its own `*.Styles.xaml` (palette + flat button overrides); windows share no styles. `Hotkeys/` hosts the global key/mouse listener, `Services/` the tray icon and window registry.
+- `tests/MicPipe.Tests` — xunit. Run:
+
+```powershell
+dotnet test tests\MicPipe.Tests\MicPipe.Tests.csproj -c Release
+```
+
+Cable pipeline tests pass trivially when VB-Audio CABLE or a physical mic is missing; transcoder tests do the same without `tools/ffmpeg`. Tests run serially (they share real audio devices and redirect the settings folder).
+
 Publish a self-contained folder:
 
 ```powershell
@@ -59,8 +72,9 @@ Publish a self-contained folder:
 - Mic pass-through + separate clip output volume
 - Import from local audio files with a waveform scrubber
 - Import from URL (e.g. YouTube) with a time range, then trim
-- Clip library
-- F1–F12 hotkeys (separate window; hidden until you open it)
+- Clip library with per-clip global hotkeys (keyboard or Mouse4/5), plus an F1–F12 quick-assign window
+- Auto push-to-talk: the configured PTT key/button is held while a clip plays
+- Local preview (trimmer "Play selection") that never reaches the cable
 - System tray (closing the main window hides; **Quit** exits)
 
 ## Windows
@@ -69,12 +83,12 @@ MicPipe uses separate windows on purpose — not one dashboard:
 
 | Window | Purpose |
 |--------|---------|
-| Main | Volumes, Live status, open tools |
-| Devices | Mic / cable / optional monitor setup |
+| Main | Volumes, Live status, PTT binding, open tools |
+| Devices | Mic / cable / "hear clips on" device |
 | Import | File or URL source |
-| Trim | Scrubber range select → save |
-| Clips | Library play / rename / delete |
-| Hotkeys | Bind F-keys to clips |
+| Trim | Waveform range + gain → preview → save |
+| Clips | Library play / bind / rename / edit / delete |
+| Hotkeys | F1–F12 quick-assign and a read-out of every bind |
 
 ## Notes
 
@@ -118,3 +132,9 @@ Built in Cursor, prompt by prompt. Rough log of what was asked:
 13. **This prompt** — Write all of the above prompts into the README.
 
 14. **PTT holds, no in-game sound** — Clip audio was reaching CABLE; the game wasn’t using **CABLE Output** as its mic. Document that setup step clearly in the README (Input = CABLE Output; MicPipe → CABLE Input).
+
+15. **Simplify the codebase** — Refactor for redundancy, structure, design bugs and stale comments; give each window its own stylesheet; update libraries. Result: NAudio 3 / Windows App SDK 2.4; one clip playback path (preview is the same player with the bus muted) instead of two; one hotkey store (`clipKeybinds`, legacy `hotkeyBindings` migrated on load) instead of two; PTT binding lives only on the main window; per-window `*.Styles.xaml` with WinUI lightweight-styling brush overrides instead of a shared button template; `Program.cs`, `ToolResolver`, `FloatArraySampleProvider` and the hearback tee removed.
+
+16. **One accent colour** — Sliders, combo pills, list selection, links and dialog buttons were painted from the Windows accent colour (pink here). Each `*.Styles.xaml` now restates the accent keys its own screen uses as `#E0A045`. Note that a `ContentDialog` renders in the XamlRoot's popup root, outside the window's resource scope, so `LibraryWindow` hands its dialogs their own copy of the stylesheet.
+
+Model note: the project was built on Claude Opus throughout, except for a maintenance pass around the simplify work (15), which was run on Fable 5.1 before switching back to Opus.

@@ -1,143 +1,113 @@
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using MicPipe.Audio;
 using MicPipe.Import;
 using MicPipe.Services;
-using Windows.UI;
 
 namespace MicPipe.Views;
 
+/// <summary>What to open in the trimmer: a source file, a display name, optionally the clip being edited and a preselected range.</summary>
+public sealed record TrimRequest(string SourcePath, string Name, string? EditClipId = null, TimeSpan? Start = null, TimeSpan? End = null);
+
 public sealed partial class TrimWindow : Window
 {
-    private string? _sourcePath;
-    private string? _editClipId;
+    private const double SliderMax = 1000;
+
+    private readonly DispatcherQueueTimer _playTimer;
+    private readonly EventHandler<ActiveClip?> _onClipChanged;
+    private TrimRequest? _request;
     private TimeSpan _duration;
-    private float[] _peaks = Array.Empty<float>();
+    private float[] _peaks = [];
     private bool _ready;
     private bool _draggingStart;
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _playTimer;
-    private double? _playhead; // 0–1 within selection while previewing
+    private double? _playhead; // 0–1 within the selection while previewing
 
     public TrimWindow()
     {
         InitializeComponent();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1080, 816));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = 768;
-            presenter.PreferredMinimumHeight = 624;
-        }
-
-        WaveCanvas.SizeChanged += (_, _) => DrawWaveform();
-        TrySetWindowIcon();
+        WindowSetup.Apply(this, 1080, 816, 768, 624);
+        WaveCanvas.SizeChanged += (_, _) => { BuildBars(); DrawOverlays(); };
 
         _playTimer = DispatcherQueue.CreateTimer();
-        _playTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _playTimer.Interval = TimeSpan.FromMilliseconds(33);
         _playTimer.Tick += (_, _) =>
         {
-            if (!AppServices.Engine.IsClipPlaying)
+            _playhead = AppServices.Engine.GetClipProgress();
+            if (_playhead is null)
             {
-                StopPlayhead();
-                return;
+                _playTimer.Stop();
             }
 
-            _playhead = AppServices.Engine.GetClipProgress() ?? 0;
-            DrawWaveform();
+            DrawOverlays();
         };
 
-        AppServices.Engine.ClipChanged += (_, name) => DispatcherQueue.TryEnqueue(() =>
+        _onClipChanged = (_, clip) => DispatcherQueue.TryEnqueue(() =>
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                StopPlayhead();
-            }
-            else
-            {
-                _playhead = 0;
-                _playTimer?.Start();
-                DrawWaveform();
-            }
+            _playhead = clip is null ? null : 0;
+            if (clip is null) _playTimer.Stop(); else _playTimer.Start();
+            DrawOverlays();
         });
-
+        AppServices.Engine.ClipChanged += _onClipChanged;
         Closed += (_, _) =>
         {
-            _playTimer?.Stop();
-            _playTimer = null;
+            _playTimer.Stop();
+            AppServices.Engine.ClipChanged -= _onClipChanged;
         };
     }
 
-    private void StopPlayhead()
+    public void Load(TrimRequest request)
     {
-        _playTimer?.Stop();
+        _ready = false;
+        _request = request;
         _playhead = null;
-        DrawWaveform();
-    }
+        _playTimer.Stop();
 
-    private void TrySetWindowIcon()
-    {
-        try
-        {
-            var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "MicPipe.ico");
-            if (File.Exists(iconPath))
-            {
-                AppWindow.SetIcon(iconPath);
-            }
-        }
-        catch
-        {
-            // non-fatal
-        }
-    }
+        var editing = request.EditClipId is not null;
+        SourceLabel.Text = editing ? "editing: " + request.Name : "source: " + request.SourcePath;
+        SaveButton.Content = editing ? "Save changes" : "Save to library";
+        NameBox.Text = request.Name;
+        _duration = WaveformBuilder.GetDuration(request.SourcePath);
+        _peaks = WaveformBuilder.BuildPeaks(request.SourcePath);
 
-    public void LoadSource(
-        string path,
-        string? suggestedName,
-        string? editClipId = null,
-        TimeSpan? suggestedTrimStart = null,
-        TimeSpan? suggestedTrimEnd = null)
-    {
-        StopPlayhead();
-        _sourcePath = path;
-        _editClipId = editClipId;
-        SourceLabel.Text = string.IsNullOrEmpty(editClipId)
-            ? "source: " + path
-            : "editing: " + (suggestedName ?? path);
-        SaveButton.Content = string.IsNullOrEmpty(editClipId) ? "Save to library" : "Save changes";
-        NameBox.Text = suggestedName ?? System.IO.Path.GetFileNameWithoutExtension(path);
-        _duration = WaveformBuilder.GetDuration(path);
-        _peaks = WaveformBuilder.BuildPeaks(path);
-        EndLabel.Text = Format(_duration);
+        var startRatio = TimeToRatio(request.Start) ?? 0;
+        var endRatio = TimeToRatio(request.End) ?? 1;
+        if (endRatio <= startRatio)
+        {
+            endRatio = Math.Min(1, startRatio + 0.01);
+        }
+
+        StartSlider.Value = startRatio * SliderMax;
+        EndSlider.Value = endRatio * SliderMax;
+        GainSlider.Value = 100;
         _ready = true;
 
-        var startRatio = 0.0;
-        var endRatio = 1.0;
-        if (_duration > TimeSpan.Zero)
-        {
-            if (suggestedTrimStart is TimeSpan ts && ts > TimeSpan.Zero)
-            {
-                startRatio = Math.Clamp(ts.TotalSeconds / _duration.TotalSeconds, 0, 1);
-            }
-
-            if (suggestedTrimEnd is TimeSpan te && te > TimeSpan.Zero)
-            {
-                endRatio = Math.Clamp(te.TotalSeconds / _duration.TotalSeconds, 0, 1);
-            }
-
-            if (endRatio <= startRatio)
-            {
-                endRatio = Math.Min(1, startRatio + 0.01);
-            }
-        }
-
-        StartSlider.Value = startRatio * 1000;
-        EndSlider.Value = endRatio * 1000;
         UpdateLabels();
-        DrawWaveform();
+        BuildBars();
+        DrawOverlays();
+    }
+
+    private double? TimeToRatio(TimeSpan? t) =>
+        t is TimeSpan ts && ts > TimeSpan.Zero && _duration > TimeSpan.Zero
+            ? Math.Clamp(ts.TotalSeconds / _duration.TotalSeconds, 0, 1)
+            : null;
+
+    private TimeSpan RatioToTime(double ratio) => TimeSpan.FromTicks((long)(_duration.Ticks * Math.Clamp(ratio, 0, 1)));
+
+    private TimeSpan SelectionStart => RatioToTime(StartSlider.Value / SliderMax);
+    private TimeSpan SelectionEnd => RatioToTime(EndSlider.Value / SliderMax);
+    private double CurrentGain => GainSlider.Value / 100.0;
+    private string ClipName => string.IsNullOrWhiteSpace(NameBox.Text) ? "clip" : NameBox.Text.Trim();
+
+    private static string Format(TimeSpan t) => $"{(int)t.TotalMinutes}:{t.Seconds:00}.{t.Milliseconds / 10:00}";
+
+    private void Gain_Changed(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_ready) GainLabel.Text = $"{(int)e.NewValue}%";
     }
 
     private void Range_Changed(object sender, RangeBaseValueChangedEventArgs e)
@@ -146,162 +116,113 @@ public sealed partial class TrimWindow : Window
         if (EndSlider.Value <= StartSlider.Value)
         {
             if (ReferenceEquals(sender, StartSlider))
-            {
-                EndSlider.Value = Math.Min(1000, StartSlider.Value + 1);
-            }
+                EndSlider.Value = Math.Min(SliderMax, StartSlider.Value + 1);
             else
-            {
                 StartSlider.Value = Math.Max(0, EndSlider.Value - 1);
-            }
         }
 
         UpdateLabels();
-        DrawWaveform();
+        DrawOverlays();
     }
 
     private void UpdateLabels()
     {
-        var start = RatioToTime(StartSlider.Value / 1000.0);
-        var end = RatioToTime(EndSlider.Value / 1000.0);
-        StartLabel.Text = Format(start);
+        StartLabel.Text = Format(SelectionStart);
         EndLabel.Text = Format(_duration);
-        SelectionLabel.Text = "selection " + Format(end - start);
+        SelectionLabel.Text = "selection " + Format(SelectionEnd - SelectionStart);
     }
 
-    private TimeSpan RatioToTime(double ratio) =>
-        TimeSpan.FromTicks((long)(_duration.Ticks * Math.Clamp(ratio, 0, 1)));
-
-    private static string Format(TimeSpan t) =>
-        $"{(int)t.TotalMinutes}:{t.Seconds:00}.{t.Milliseconds / 10:00}";
-
-    private void DrawWaveform()
+    private void BuildBars()
     {
-        WaveCanvas.Children.Clear();
-        if (_peaks.Length == 0 || WaveCanvas.ActualWidth <= 0)
+        WaveBars.Children.Clear();
+        var w = WaveCanvas.ActualWidth;
+        var h = WaveCanvas.ActualHeight;
+        if (_peaks.Length == 0 || w <= 0)
         {
             return;
         }
 
-        var w = WaveCanvas.ActualWidth;
-        var h = WaveCanvas.ActualHeight;
-        var mid = h / 2;
+        var barBrush = (Brush)((FrameworkElement)Content).Resources["WaveBarBrush"];
         var barWidth = Math.Max(1, w / _peaks.Length);
-
-        var startX = w * (StartSlider.Value / 1000.0);
-        var endX = w * (EndSlider.Value / 1000.0);
-
-        // Selection band
-        WaveCanvas.Children.Add(new Rectangle
-        {
-            Width = Math.Max(1, endX - startX),
-            Height = h,
-            Fill = new SolidColorBrush(Color.FromArgb(40, 0xE0, 0xA0, 0x45))
-        });
-        Canvas.SetLeft(WaveCanvas.Children[^1], startX);
-
-        // Scrubbed / played region within selection
-        if (_playhead is double progress)
-        {
-            var playX = startX + (endX - startX) * Math.Clamp(progress, 0, 1);
-            WaveCanvas.Children.Add(new Rectangle
-            {
-                Width = Math.Max(1, playX - startX),
-                Height = h,
-                Fill = new SolidColorBrush(Color.FromArgb(120, 0xE0, 0xA0, 0x45))
-            });
-            Canvas.SetLeft(WaveCanvas.Children[^1], startX);
-
-            var playhead = new Rectangle
-            {
-                Width = 2,
-                Height = h,
-                Fill = new SolidColorBrush(Color.FromArgb(255, 0xE0, 0xA0, 0x45))
-            };
-            Canvas.SetLeft(playhead, playX - 1);
-            WaveCanvas.Children.Add(playhead);
-        }
-
         for (var i = 0; i < _peaks.Length; i++)
         {
             var amp = _peaks[i] * (h * 0.45);
-            var x = i * barWidth;
-            var inPlayed = _playhead is double p &&
-                           x >= startX &&
-                           x <= startX + (endX - startX) * Math.Clamp(p, 0, 1);
+            var bar = new Rectangle { Width = barWidth, Height = Math.Max(1, amp * 2), Fill = barBrush };
+            Canvas.SetLeft(bar, i * barWidth);
+            Canvas.SetTop(bar, h / 2 - amp);
+            WaveBars.Children.Add(bar);
+        }
+    }
 
-            var rect = new Rectangle
-            {
-                Width = barWidth,
-                Height = Math.Max(1, amp * 2),
-                Fill = new SolidColorBrush(inPlayed
-                    ? Color.FromArgb(255, 0xE0, 0xA0, 0x45)
-                    : Color.FromArgb(255, 0xE8, 0xEA, 0xED))
-            };
-            Canvas.SetLeft(rect, x);
-            Canvas.SetTop(rect, mid - amp);
-            WaveCanvas.Children.Add(rect);
+    private void DrawOverlays()
+    {
+        var w = WaveCanvas.ActualWidth;
+        var h = WaveCanvas.ActualHeight;
+        var startX = w * (StartSlider.Value / SliderMax);
+        var endX = w * (EndSlider.Value / SliderMax);
+
+        SelectionBand.Height = h;
+        SelectionBand.Width = Math.Max(1, endX - startX);
+        Canvas.SetLeft(SelectionBand, startX);
+
+        PlayedBand.Visibility = Playhead.Visibility = _playhead is null ? Visibility.Collapsed : Visibility.Visible;
+        if (_playhead is double p)
+        {
+            var playX = startX + (endX - startX) * Math.Clamp(p, 0, 1);
+            PlayedBand.Height = Playhead.Height = h;
+            PlayedBand.Width = Math.Max(1, playX - startX);
+            Canvas.SetLeft(PlayedBand, startX);
+            Canvas.SetLeft(Playhead, playX - 1);
         }
     }
 
     private void Wave_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var x = e.GetCurrentPoint(WaveCanvas).Position.X;
-        var ratio = x / Math.Max(1, WaveCanvas.ActualWidth) * 1000;
-        var distStart = Math.Abs(ratio - StartSlider.Value);
-        var distEnd = Math.Abs(ratio - EndSlider.Value);
-        _draggingStart = distStart <= distEnd;
-        if (_draggingStart) StartSlider.Value = ratio;
-        else EndSlider.Value = ratio;
+        var ratio = PointerRatio(e);
+        _draggingStart = Math.Abs(ratio - StartSlider.Value) <= Math.Abs(ratio - EndSlider.Value);
+        MoveHandle(ratio);
     }
 
     private void Wave_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (!e.Pointer.IsInContact) return;
-        var x = e.GetCurrentPoint(WaveCanvas).Position.X;
-        var ratio = x / Math.Max(1, WaveCanvas.ActualWidth) * 1000;
-        if (_draggingStart) StartSlider.Value = ratio;
-        else EndSlider.Value = ratio;
+        if (e.Pointer.IsInContact) MoveHandle(PointerRatio(e));
     }
 
-    private void Wave_PointerReleased(object sender, PointerRoutedEventArgs e) { }
+    private double PointerRatio(PointerRoutedEventArgs e) =>
+        e.GetCurrentPoint(WaveCanvas).Position.X / Math.Max(1, WaveCanvas.ActualWidth) * SliderMax;
+
+    private void MoveHandle(double ratio)
+    {
+        if (_draggingStart) StartSlider.Value = ratio; else EndSlider.Value = ratio;
+    }
 
     private async void Preview_Click(object sender, RoutedEventArgs e)
     {
-        if (_sourcePath is null) return;
+        if (_request is null) return;
         try
         {
-            var start = RatioToTime(StartSlider.Value / 1000.0);
-            var end = RatioToTime(EndSlider.Value / 1000.0);
-            var trimmed = await AppServices.Transcoder.TrimToWavAsync(_sourcePath, start, end);
-            _playhead = 0;
-            DrawWaveform();
-            _playTimer?.Start();
-            AppServices.Engine.PreviewClipLocal(trimmed, NameBox.Text);
+            var trimmed = await MediaTranscoder.TrimToWavAsync(_request.SourcePath, SelectionStart, SelectionEnd, CurrentGain);
+            AppServices.Engine.PreviewClip(trimmed, ClipName);
         }
         catch (Exception ex)
         {
-            StopPlayhead();
             SourceLabel.Text = ex.Message;
         }
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (_sourcePath is null) return;
+        if (_request is null) return;
         try
         {
-            var start = RatioToTime(StartSlider.Value / 1000.0);
-            var end = RatioToTime(EndSlider.Value / 1000.0);
-            var trimmed = await AppServices.Transcoder.TrimToWavAsync(_sourcePath, start, end);
-            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "clip" : NameBox.Text.Trim();
-            if (!string.IsNullOrEmpty(_editClipId))
-            {
-                AppServices.Library.Replace(_editClipId, name, trimmed, (end - start).TotalSeconds);
-            }
+            var start = SelectionStart;
+            var end = SelectionEnd;
+            var trimmed = await MediaTranscoder.TrimToWavAsync(_request.SourcePath, start, end, CurrentGain);
+            var seconds = (end - start).TotalSeconds;
+            if (_request.EditClipId is string id)
+                AppServices.Library.Replace(id, ClipName, trimmed, seconds);
             else
-            {
-                AppServices.Library.Add(name, trimmed, (end - start).TotalSeconds);
-            }
+                AppServices.Library.Add(ClipName, trimmed, seconds);
 
             WindowHub.OpenLibrary();
             Close();
@@ -312,5 +233,5 @@ public sealed partial class TrimWindow : Window
         }
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+    private void Stop_Click(object sender, RoutedEventArgs e) => AppServices.Engine.StopClip();
 }

@@ -15,13 +15,7 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
-            var detail = e.Exception.ToString();
-            if (e.Exception.InnerException is not null)
-            {
-                detail += Environment.NewLine + "Inner: " + e.Exception.InnerException;
-            }
-
-            AppLog.Write("Unhandled: " + e.Message + Environment.NewLine + detail);
+            AppLog.Write("Unhandled: " + e.Message, e.Exception);
             e.Handled = true;
         };
     }
@@ -30,7 +24,6 @@ public partial class App : Application
     {
         AppServices.Initialize();
         _mainWindow = new MainWindow();
-        WindowHub.Main = _mainWindow;
         _mainWindow.Closed += MainWindow_Closed;
         _mainWindow.Activate();
 
@@ -44,6 +37,7 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Closing the main window hides it; the tray owns the app's lifetime.</summary>
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         if (_exitRequested)
@@ -51,23 +45,14 @@ public partial class App : Application
             return;
         }
 
-        // Hide instead of quit — tray owns lifetime.
         args.Handled = true;
-        if (sender is Window window)
-        {
-            window.AppWindow.Hide();
-        }
+        ((Window)sender).AppWindow.Hide();
     }
 
     private void ShowMain()
     {
-        if (_mainWindow is null)
-        {
-            return;
-        }
-
-        _mainWindow.AppWindow.Show();
-        _mainWindow.Activate();
+        _mainWindow?.AppWindow.Show();
+        _mainWindow?.Activate();
     }
 
     public void Quit()

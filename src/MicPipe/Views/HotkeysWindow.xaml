@@ -4,12 +4,16 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Hotkeys">
 
+  <!-- Outer Grid only hosts the stylesheet; StaticResource can't see a dictionary declared on the same element. -->
+  <Grid>
+    <Grid.Resources>
+      <ResourceDictionary Source="ms-appx:///Views/HotkeysWindow.Styles.xaml" />
+    </Grid.Resources>
   <Grid Background="{StaticResource SurfaceBrush}" Padding="16" RowSpacing="10">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
@@ -18,8 +22,7 @@
     <StackPanel Grid.Row="1" Spacing="4">
       <TextBlock Text="Active binds" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
       <Border Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Padding="10,8">
-        <TextBlock x:Name="ActiveBindsText" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"
-                   Text="None yet — bind keys in Clips, or assign F-keys below." />
+        <TextBlock x:Name="ActiveBindsText" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" />
       </Border>
     </StackPanel>
 
@@ -30,14 +33,10 @@
       </StackPanel>
     </ScrollViewer>
 
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16">
-      <RadioButton x:Name="HoldRadio" Content="Hold to play" GroupName="Mode" />
-      <RadioButton x:Name="ToggleRadio" Content="Press to play" GroupName="Mode" IsChecked="True" />
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+      <Button Content="Clear all" Click="Clear_Click" />
+      <Button Content="Save" Click="Save_Click" />
     </StackPanel>
-
-    <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8">
-      <Button Content="Clear all" Style="{StaticResource ToolButtonStyle}" Click="Clear_Click" />
-      <Button Content="Save" Style="{StaticResource ToolButtonStyle}" Click="Save_Click" />
-    </StackPanel>
+  </Grid>
   </Grid>
 </Window>

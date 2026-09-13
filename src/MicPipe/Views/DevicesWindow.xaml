@@ -4,63 +4,43 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Devices">
 
+  <!-- Outer Grid only hosts the stylesheet; StaticResource can't see a dictionary declared on the same element. -->
+  <Grid>
+    <Grid.Resources>
+      <ResourceDictionary Source="ms-appx:///Views/DevicesWindow.Styles.xaml" />
+    </Grid.Resources>
   <Grid Background="{StaticResource SurfaceBrush}">
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <ScrollViewer Grid.Row="0"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled"
-                  Padding="16,16,16,8">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16,16,16,8">
       <StackPanel Spacing="12">
         <TextBlock Text="Devices" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-
         <TextBlock x:Name="CableStatus" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" />
 
         <ComboBox x:Name="MicCombo" Header="Microphone (your voice)" HorizontalAlignment="Stretch"
-                  MinWidth="400" DisplayMemberPath="Name" SelectedValuePath="Id" />
+                  DisplayMemberPath="Name" SelectedValuePath="Id" />
         <ComboBox x:Name="CableCombo" Header="Virtual cable output (CABLE Input)" HorizontalAlignment="Stretch"
-                  MinWidth="400" DisplayMemberPath="Name" SelectedValuePath="Id" />
-        <ComboBox x:Name="MonitorCombo" Header="Monitor / preview headphones" HorizontalAlignment="Stretch"
-                  MinWidth="400" DisplayMemberPath="Name" SelectedValuePath="Id" />
+                  DisplayMemberPath="Name" SelectedValuePath="Id" />
+        <ComboBox x:Name="MonitorCombo" Header="Hear clips on (headphones / speakers)" HorizontalAlignment="Stretch"
+                  DisplayMemberPath="Name" SelectedValuePath="Id" />
 
-        <TextBlock Text="Push-to-talk (auto)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
-        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}"
-                   Text="While a clip plays, MicPipe holds this key or mouse button for you (for games that use push-to-talk). Mouse4/Mouse5 side buttons work. Leave unset to disable." />
-        <Grid ColumnSpacing="8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBox x:Name="PttKeyBox" Header="PTT binding" IsReadOnly="True" PlaceholderText="None" />
-          <Button Grid.Column="1" x:Name="PttCaptureButton" Content="Set" Style="{StaticResource ToolButtonStyle}"
-                  Click="PttCapture_Click" VerticalAlignment="Bottom" />
-          <Button Grid.Column="2" Content="Clear" Style="{StaticResource ToolButtonStyle}"
-                  Click="PttClear_Click" VerticalAlignment="Bottom" />
-        </Grid>
-        <TextBlock x:Name="PttHint" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Visibility="Collapsed"
-                   Text="Press a keyboard key or mouse button (Mouse4/5)…" />
-
-        <HyperlinkButton Content="Get VB-Audio Virtual Cable"
-                         NavigateUri="https://vb-audio.com/Cable/" />
+        <HyperlinkButton Content="Get VB-Audio Virtual Cable" NavigateUri="https://vb-audio.com/Cable/" />
 
         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}"
                    Text="In Discord or your game, set the microphone input to CABLE Output (VB-Audio Virtual Cable). MicPipe mixes your real mic and clips into CABLE Input." />
       </StackPanel>
     </ScrollViewer>
 
-    <Border Grid.Row="1"
-            Background="{StaticResource SurfaceAltBrush}"
-            Padding="16,12"
-            BorderBrush="#33FFFFFF"
-            BorderThickness="0,1,0,0">
+    <Border Grid.Row="1" Background="{StaticResource SurfaceAltBrush}" Padding="16,12"
+            BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0">
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Refresh" Style="{StaticResource ToolButtonStyle}" Click="Refresh_Click" />
-        <Button Content="Save &amp; start" Style="{StaticResource ToolButtonStyle}" Click="Save_Click" />
+        <Button Content="Refresh" Click="Refresh_Click" />
+        <Button Content="Save &amp; start" Click="Save_Click" />
       </StackPanel>
     </Border>
+  </Grid>
   </Grid>
 </Window>

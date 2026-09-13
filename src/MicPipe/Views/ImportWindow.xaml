@@ -4,22 +4,24 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Import clip">
 
+  <!-- Outer Grid only hosts the stylesheet; StaticResource can't see a dictionary declared on the same element. -->
+  <Grid>
+    <Grid.Resources>
+      <ResourceDictionary Source="ms-appx:///Views/ImportWindow.Styles.xaml" />
+    </Grid.Resources>
   <Grid Background="{StaticResource SurfaceBrush}">
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <ScrollViewer Grid.Row="0"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled"
-                  Padding="16,16,16,8">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16,16,16,8">
       <StackPanel Spacing="12">
         <TextBlock Text="Import clip" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
 
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button x:Name="FromFileButton" Content="From file" Style="{StaticResource ToolButtonStyle}" Click="FromFile_Click" />
-          <Button x:Name="FromUrlButton" Content="From URL" Style="{StaticResource ToolButtonStyle}" Click="FromUrl_Click" />
+          <Button Content="From file" Click="FromFile_Click" />
+          <Button Content="From URL" Click="FromUrl_Click" />
         </StackPanel>
 
         <StackPanel x:Name="UrlPanel" Visibility="Collapsed" Spacing="12">
@@ -40,15 +42,10 @@
       </StackPanel>
     </ScrollViewer>
 
-    <Border Grid.Row="1"
-            Background="{StaticResource SurfaceAltBrush}"
-            Padding="16,12"
-            BorderBrush="#33FFFFFF"
-            BorderThickness="0,1,0,0">
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button x:Name="FetchButton" Content="Fetch &amp; open trimmer" Style="{StaticResource ToolButtonStyle}"
-                Click="Fetch_Click" Visibility="Collapsed" />
-      </StackPanel>
+    <Border Grid.Row="1" Background="{StaticResource SurfaceAltBrush}" Padding="16,12"
+            BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0">
+      <Button x:Name="FetchButton" Content="Fetch &amp; open trimmer" Click="Fetch_Click" Visibility="Collapsed" />
     </Border>
+  </Grid>
   </Grid>
 </Window>

@@ -1,20 +1,18 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
-using MicPipe.Data;
 
 namespace MicPipe.Services;
 
+/// <summary>Shell notify icon: click shows the main window, right-click offers Open/Quit.</summary>
 public sealed class TrayIconService : IDisposable
 {
     private NotifyIconData _data;
     private bool _added;
     private Action? _onShow;
     private Action? _onQuit;
-    private Window? _window;
 
     public void Initialize(Window window, Action onShow, Action onQuit)
     {
-        _window = window;
         _onShow = onShow;
         _onQuit = onQuit;
 
@@ -37,7 +35,7 @@ public sealed class TrayIconService : IDisposable
 
         _added = Shell_NotifyIcon(NimAdd, ref _data);
 
-        // Subclass via a hidden message-only window would be ideal; for v1 use window WndProc hook.
+        // Tray callbacks arrive on the main window's WndProc, so subclass it.
         SubclassWindow(hwnd);
     }
 

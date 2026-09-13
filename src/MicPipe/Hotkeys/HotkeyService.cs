@@ -4,11 +4,15 @@ using MicPipe.Data;
 
 namespace MicPipe.Hotkeys;
 
+/// <summary>
+/// Global clip triggers from <see cref="AppSettings.ClipKeybinds"/>: keyboard keys via RegisterHotKey on a
+/// message-only window (own STA thread), side mouse buttons via a low-level mouse hook on that same thread.
+/// </summary>
 public sealed class HotkeyService : IDisposable
 {
     private const int WmHotkey = 0x0312;
-    private const int WmApp = 0x8000;
-    private const int WmReloadBindings = WmApp + 32;
+    private const int WmQuit = 0x0012;
+    private const int WmReloadBindings = 0x8000 + 32; // WM_APP + 32
     private const int WhMouseLl = 14;
     private const int WmXbuttonDown = 0x020B;
     private const int Xbutton1 = 0x0001;
@@ -17,15 +21,14 @@ public sealed class HotkeyService : IDisposable
     private readonly AppSettings _settings;
     private readonly ClipLibrary _library;
     private readonly AudioEngine _engine;
-    private readonly Dictionary<int, string> _idToClip = new();
-    private readonly Dictionary<int, string> _mouseButtonToClip = new(); // 4/5 -> clipId
+    private readonly Dictionary<int, string> _hotkeyIdToClip = new();
+    private readonly Dictionary<int, string> _mouseButtonToClip = new();
     private IntPtr _hwnd;
     private IntPtr _mouseHook;
     private Thread? _thread;
     private volatile bool _running;
     private WndProc? _wndProc;
     private LowLevelMouseProc? _mouseProc;
-    private IntPtr _wndProcPtr;
 
     public HotkeyService(AppSettings settings, ClipLibrary library, AudioEngine engine)
     {
@@ -41,45 +44,26 @@ public sealed class HotkeyService : IDisposable
             return;
         }
 
-        MigrateLegacyBindings();
         _running = true;
-        _thread = new Thread(MessageLoop)
-        {
-            IsBackground = true,
-            Name = "MicPipe.Hotkeys"
-        };
+        _thread = new Thread(MessageLoop) { IsBackground = true, Name = "MicPipe.Hotkeys" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
     }
 
+    /// <summary>Re-registers from settings. Marshalled to the hotkey thread, which owns the window.</summary>
     public void ReloadBindings()
     {
-        if (_hwnd == IntPtr.Zero)
-        {
-            return;
-        }
-
-        // RegisterHotKey/UnregisterHotKey must run on the thread that owns _hwnd.
-        if (!PostMessage(_hwnd, WmReloadBindings, IntPtr.Zero, IntPtr.Zero))
+        if (_hwnd != IntPtr.Zero && !PostMessage(_hwnd, WmReloadBindings, IntPtr.Zero, IntPtr.Zero))
         {
             AppLog.Write("PostMessage reload hotkeys failed: " + Marshal.GetLastWin32Error());
         }
     }
 
+    /// <summary>One bind per clip, one clip per key.</summary>
     public void BindClip(string clipId, int code, bool isMouse, string label)
     {
-        // One bind per clip, one clip per key
-        _settings.ClipKeybinds.RemoveAll(b =>
-            b.ClipId == clipId ||
-            (b.IsMouse == isMouse && b.Code == code));
-
-        _settings.ClipKeybinds.Add(new ClipKeybind
-        {
-            ClipId = clipId,
-            Code = code,
-            IsMouse = isMouse,
-            Label = label
-        });
+        _settings.ClipKeybinds.RemoveAll(b => b.ClipId == clipId || (b.IsMouse == isMouse && b.Code == code));
+        _settings.ClipKeybinds.Add(new ClipKeybind { ClipId = clipId, Code = code, IsMouse = isMouse, Label = label });
         _settings.Save();
         ReloadBindings();
     }
@@ -91,127 +75,78 @@ public sealed class HotkeyService : IDisposable
         ReloadBindings();
     }
 
-    private void MigrateLegacyBindings()
-    {
-        if (_settings.ClipKeybinds.Count > 0 || _settings.HotkeyBindings.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var pair in _settings.HotkeyBindings)
-        {
-            if (string.IsNullOrWhiteSpace(pair.Value))
-            {
-                continue;
-            }
-
-            if (!TryResolveVirtualKey(pair.Key, out var vk))
-            {
-                continue;
-            }
-
-            _settings.ClipKeybinds.Add(new ClipKeybind
-            {
-                ClipId = pair.Value,
-                Code = (int)vk,
-                IsMouse = false,
-                Label = pair.Key
-            });
-        }
-
-        _settings.Save();
-    }
-
     private void MessageLoop()
     {
         _wndProc = WndProcHandler;
-        _wndProcPtr = Marshal.GetFunctionPointerForDelegate(_wndProc);
         _mouseProc = MouseHookCallback;
 
         var wc = new WndClassEx
         {
             cbSize = (uint)Marshal.SizeOf<WndClassEx>(),
-            lpfnWndProc = _wndProcPtr,
+            lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProc),
             hInstance = GetModuleHandle(null),
             lpszClassName = "MicPipeHotkeyWindow"
         };
-
-        var atom = RegisterClassEx(ref wc);
-        if (atom == 0)
+        if (RegisterClassEx(ref wc) == 0)
         {
             AppLog.Write("RegisterClassEx failed: " + Marshal.GetLastWin32Error());
             return;
         }
 
-        _hwnd = CreateWindowEx(0, "MicPipeHotkeyWindow", "MicPipeHotkey", 0,
-            0, 0, 0, 0, HWND_MESSAGE, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
-
+        _hwnd = CreateWindowEx(0, wc.lpszClassName, "MicPipeHotkey", 0, 0, 0, 0, 0, HwndMessage, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
         RegisterAll();
 
-        while (_running)
+        while (_running && GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
-            var ret = GetMessage(out var msg, IntPtr.Zero, 0, 0);
-            if (ret == 0 || ret == -1)
-            {
-                break;
-            }
-
             TranslateMessage(ref msg);
             DispatchMessage(ref msg);
         }
 
         UnregisterAll();
-        if (_hwnd != IntPtr.Zero)
-        {
-            DestroyWindow(_hwnd);
-            _hwnd = IntPtr.Zero;
-        }
+        DestroyWindow(_hwnd);
+        _hwnd = IntPtr.Zero;
     }
 
     private IntPtr WndProcHandler(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (msg == WmReloadBindings)
+        switch (msg)
         {
-            UnregisterAll();
-            RegisterAll();
-            return IntPtr.Zero;
+            case WmReloadBindings:
+                UnregisterAll();
+                RegisterAll();
+                return IntPtr.Zero;
+            case WmHotkey:
+                if (_hotkeyIdToClip.TryGetValue(wParam.ToInt32(), out var clipId))
+                {
+                    PlayClip(clipId);
+                }
+
+                return IntPtr.Zero;
+            default:
+                return DefWindowProc(hWnd, msg, wParam, lParam);
         }
-
-        if (msg == WmHotkey)
-        {
-            var id = wParam.ToInt32();
-            if (_idToClip.TryGetValue(id, out var clipId))
-            {
-                PlayClipId(clipId);
-            }
-
-            return IntPtr.Zero;
-        }
-
-        return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
     private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && wParam == (IntPtr)WmXbuttonDown)
+        if (nCode >= 0 && wParam == WmXbuttonDown)
         {
-            var info = Marshal.PtrToStructure<MsllHookStruct>(lParam);
-            var xBtn = (int)((info.mouseData >> 16) & 0xffff);
-            var button = xBtn == Xbutton1 ? 4 : xBtn == Xbutton2 ? 5 : 0;
-            if (button != 0 && _mouseButtonToClip.TryGetValue(button, out var clipId))
+            var xButton = (int)((Marshal.PtrToStructure<MsllHookStruct>(lParam).mouseData >> 16) & 0xffff);
+            var button = xButton == Xbutton1 ? 4 : xButton == Xbutton2 ? 5 : 0;
+            if (_mouseButtonToClip.TryGetValue(button, out var clipId))
             {
-                PlayClipId(clipId);
+                PlayClip(clipId);
             }
         }
 
         return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 
-    private void PlayClipId(string clipId)
+    private void PlayClip(string clipId)
     {
         try
         {
-            if (_library.TryGet(clipId, out var entry) && entry is not null)
+            if (_library.Find(clipId) is ClipEntry entry)
             {
                 _engine.PlayClip(_library.GetPath(entry), entry.Name);
             }
@@ -224,32 +159,16 @@ public sealed class HotkeyService : IDisposable
 
     private void RegisterAll()
     {
-        _idToClip.Clear();
-        _mouseButtonToClip.Clear();
-        var id = 1;
-        var needMouseHook = false;
-        var registered = 0;
-
-        foreach (var bind in _settings.ClipKeybinds)
+        var nextId = 1;
+        foreach (var bind in _settings.ClipKeybinds.Where(b => !string.IsNullOrWhiteSpace(b.ClipId) && b.Code > 0))
         {
-            if (string.IsNullOrWhiteSpace(bind.ClipId) || bind.Code <= 0)
-            {
-                continue;
-            }
-
             if (bind.IsMouse)
             {
                 _mouseButtonToClip[bind.Code] = bind.ClipId;
-                needMouseHook = true;
-                continue;
             }
-
-            SetLastError(0);
-            if (RegisterHotKey(_hwnd, id, 0, (uint)bind.Code))
+            else if (RegisterHotKey(_hwnd, nextId, 0, (uint)bind.Code))
             {
-                _idToClip[id] = bind.ClipId;
-                registered++;
-                id++;
+                _hotkeyIdToClip[nextId++] = bind.ClipId;
             }
             else
             {
@@ -257,59 +176,26 @@ public sealed class HotkeyService : IDisposable
             }
         }
 
-        // Legacy F-row dictionary still supported if not migrated somehow
-        foreach (var pair in _settings.HotkeyBindings)
+        AppLog.Write($"Hotkeys registered: {_hotkeyIdToClip.Count} key(s), {_mouseButtonToClip.Count} mouse.");
+
+        if (_mouseButtonToClip.Count > 0)
         {
-            if (string.IsNullOrWhiteSpace(pair.Value) || !TryResolveVirtualKey(pair.Key, out var vk))
-            {
-                continue;
-            }
-
-            if (_settings.ClipKeybinds.Any(b => !b.IsMouse && b.Code == (int)vk))
-            {
-                continue;
-            }
-
-            SetLastError(0);
-            if (RegisterHotKey(_hwnd, id, 0, vk))
-            {
-                _idToClip[id] = pair.Value;
-                registered++;
-                id++;
-            }
-        }
-
-        AppLog.Write($"Hotkeys registered: {registered} key(s), {_mouseButtonToClip.Count} mouse.");
-
-        if (needMouseHook && _mouseHook == IntPtr.Zero && _mouseProc is not null)
-        {
-            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
+            _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc!, GetModuleHandle(null), 0);
             if (_mouseHook == IntPtr.Zero)
             {
                 AppLog.Write("SetWindowsHookEx mouse failed: " + Marshal.GetLastWin32Error());
             }
         }
-        else if (!needMouseHook && _mouseHook != IntPtr.Zero)
-        {
-            UnhookWindowsHookEx(_mouseHook);
-            _mouseHook = IntPtr.Zero;
-        }
     }
 
     private void UnregisterAll()
     {
-        foreach (var hotkeyId in _idToClip.Keys.ToList())
+        foreach (var id in _hotkeyIdToClip.Keys)
         {
-            UnregisterHotKey(_hwnd, hotkeyId);
+            UnregisterHotKey(_hwnd, id);
         }
 
-        // Belt-and-braces: clear any orphaned ids if a prior cross-thread reload left them behind
-        for (var i = 1; i <= 64; i++)
-        {
-            UnregisterHotKey(_hwnd, i);
-        }
-
-        _idToClip.Clear();
+        _hotkeyIdToClip.Clear();
         _mouseButtonToClip.Clear();
 
         if (_mouseHook != IntPtr.Zero)
@@ -319,59 +205,18 @@ public sealed class HotkeyService : IDisposable
         }
     }
 
-    public static bool TryResolveVirtualKey(string name, out uint vk)
-    {
-        vk = 0;
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-
-        if (name.StartsWith("F", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(name[1..], out var n) && n is >= 1 and <= 24)
-        {
-            vk = (uint)(0x70 + (n - 1));
-            return true;
-        }
-
-        if (Enum.TryParse<Windows.System.VirtualKey>(name, ignoreCase: true, out var parsed) &&
-            parsed != Windows.System.VirtualKey.None)
-        {
-            vk = (uint)parsed;
-            return true;
-        }
-
-        if (name.Length == 1)
-        {
-            var c = char.ToUpperInvariant(name[0]);
-            if (c is >= 'A' and <= 'Z')
-            {
-                vk = c;
-                return true;
-            }
-
-            if (c is >= '0' and <= '9')
-            {
-                vk = c;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     public void Dispose()
     {
         _running = false;
         if (_hwnd != IntPtr.Zero)
         {
-            PostMessage(_hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+            PostMessage(_hwnd, WmQuit, IntPtr.Zero, IntPtr.Zero);
         }
 
         _thread?.Join(1000);
     }
 
-    private static readonly IntPtr HWND_MESSAGE = new(-3);
+    private static readonly IntPtr HwndMessage = new(-3);
 
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -446,14 +291,11 @@ public sealed class HotkeyService : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
-
-    [DllImport("kernel32.dll")]
-    private static extern void SetLastError(uint dwErrCode);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
